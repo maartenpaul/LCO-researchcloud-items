@@ -8,6 +8,7 @@
       - build-essential
     state: present
     update_cache: true
+  become: yes
   ignore_errors: yes # Bypasses the mirror errors seen in your screenshot
 
 
@@ -15,42 +16,31 @@
   ansible.builtin.stat:
     path: "{{ pixi_bin }}"
   register: pixi_binary
+  become: no
 
-- name: Download and install pixi
+- name: Download and install pixi (as user)
   ansible.builtin.shell: |
     curl -fsSL {{ pixi_install_url }} | bash
   args:
     creates: "{{ pixi_bin }}"
-  environment:
-    PIXI_HOME: "{{ pixi_home }}"
   when: not pixi_binary.stat.exists
+  become: no
 
-- name: Ensure pixi home directory exists
-  ansible.builtin.file:
-    path: "{{ pixi_home }}/bin"
-    state: directory
-    mode: '0755'
-
-- name: Ensure pixi binary is in PATH
+- name: Add pixi to user's shell profile
   ansible.builtin.lineinfile:
-    path: /etc/profile.d/pixi.sh
+    path: "{{ user_home }}/.bashrc"
     line: 'export PATH="{{ pixi_home }}/bin:$PATH"'
     create: yes
     mode: '0644'
+  become: no
 
-- name: Clone AI_tools_pixi repository
+- name: Clone AI_tools_pixi repository (as user)
   ansible.builtin.git:
     repo: "{{ ai_tools_repo }}"
     dest: "{{ ai_tools_dir }}"
     version: master
     force: yes
-
-- name: Set permissions on AI_tools_pixi directory
-  ansible.builtin.file:
-    path: "{{ ai_tools_dir }}"
-    state: directory
-    mode: '0755'
-    recurse: yes
+  become: no
 
 - name: Install pixi environments
   ansible.builtin.shell: |
@@ -58,21 +48,24 @@
   args:
     chdir: "{{ ai_tools_dir }}/{{ item }}"
     creates: "{{ ai_tools_dir }}/{{ item }}/.pixi"
-  loop: "{{ pixi_environments }}"
-  register: pixi_install_result
-  failed_when: pixi_install_result.rc != 0
-
-- name: Create desktop entries directory
+  loop: "{{ pixi_environments }}" (as user)
+  ansible.builtin.shell: |
+    {{ pixi_bin }} install
+  args:
+    chdir: "{{ user desktop entries directory
   ansible.builtin.file:
-    path: /usr/share/applications
+    path: "{{ user_home }}/.local/share/applications"
     state: directory
     mode: '0755'
+  become: no
 
 - name: Create desktop launcher for pixi environments
   ansible.builtin.template:
     src: pixi_environment.desktop.j2
-    dest: "/usr/share/applications/pixi_{{ item }}.desktop"
+    dest: "{{ user_home }}/.local/share/applications/pixi_{{ item }}.desktop"
     mode: "0644"
+  loop: "{{ pixi_environments }}"
+  become: no
   loop: "{{ pixi_environments }}"
 
 - name: Display installation summary
