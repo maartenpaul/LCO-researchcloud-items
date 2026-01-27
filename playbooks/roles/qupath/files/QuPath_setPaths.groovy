@@ -1,14 +1,5 @@
+def targetStream = new FileInputStream( new File ( "qp_prefs.xml" ) )
+println targetStream
+PathPrefs.importPreferences( targetStream )
+
 import qupath.lib.gui.prefs.PathPrefs
-import javafx.application.Platform
-
-// Update this to the path where your extensions are
-def extensionPath = "/opt/QuPath_Common_Data/extensions"
-
-try {
-    PathPrefs.getExtensionDirectoryProperty().set(extensionPath)
-    println "Successfully set extension path to: " + extensionPath
-} catch (Exception e) {
-    println "Error setting path: " + e.getMessage()
-}
-
-Platform.exit()
