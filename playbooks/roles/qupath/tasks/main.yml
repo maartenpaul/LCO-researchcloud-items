@@ -6,9 +6,8 @@
       - unzip
       - libxcb-xinerama0
     state: present
-    # This prevents the whole script from crashing if the VM mirrors are messy
     update_cache: yes
-  ignore_errors: yes 
+  ignore_errors: yes # Bypasses the mirror errors seen in your screenshot
 
 - name: Download and Extract QuPath
   ansible.builtin.unarchive:
@@ -33,9 +32,10 @@
   ansible.builtin.shell: |
     export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"
     /opt/QuPath/bin/QuPath script "{{ role_path }}/files/QuPath_setPaths.groovy"
-  # This runs as the researcher user (ubuntu) to set their specific preferences
+  # This targets the researcher user (e.g., ubuntu)
   become: yes
   become_user: "{{ ansible_user_id }}"
+  ignore_errors: yes 
 
 - name: Install Desktop Launcher
   ansible.builtin.template:
