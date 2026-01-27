@@ -1,0 +1,79 @@
+---
+- name: Install system dependencies
+  ansible.builtin.apt:
+    name:
+      - curl
+      - git
+      - build-essential
+    state: present
+    update_cache: true
+
+- name: Check if pixi is already installed
+  ansible.builtin.stat:
+    path: "{{ pixi_install_dir }}/pixi"
+  register: pixi_binary
+
+- name: Download and install pixi
+  ansible.builtin.shell: |
+    curl -fsSL {{ pixi_install_url }} | bash
+  args:
+    creates: "{{ pixi_install_dir }}/pixi"
+  environment:
+    PIXI_HOME: "{{ pixi_install_dir }}"
+  when: not pixi_binary.stat.exists
+
+- name: Ensure pixi binary is in PATH
+  ansible.builtin.lineinfile:
+    path: /etc/profile.d/pixi.sh
+    line: 'export PATH="{{ pixi_install_dir }}:$PATH"'
+    create: yes
+    mode: '0644'
+
+- name: Clone AI_tools_pixi repository
+  ansible.builtin.git:
+    repo: "{{ ai_tools_repo }}"
+    dest: "{{ ai_tools_dir }}"
+    version: master
+    force: yes
+
+- name: Set permissions on AI_tools_pixi directory
+  ansible.builtin.file:
+    path: "{{ ai_tools_dir }}"
+    state: directory
+    mode: '0755'
+    recurse: yes
+
+- name: Install pixi environments
+  ansible.builtin.shell: |
+    export PATH="{{ pixi_install_dir }}:$PATH"
+    cd "{{ ai_tools_dir }}/{{ item }}"
+    pixi install
+  args:
+    creates: "{{ ai_tools_dir }}/{{ item }}/.pixi"
+  loop: "{{ pixi_environments }}"
+  register: pixi_install_result
+  failed_when: pixi_install_result.rc != 0
+
+- name: Create desktop entries directory
+  ansible.builtin.file:
+    path: /usr/share/applications
+    state: directory
+    mode: '0755'
+
+- name: Create desktop launcher for pixi environments
+  ansible.builtin.template:
+    src: pixi_environment.desktop.j2
+    dest: "/usr/share/applications/pixi_{{ item }}.desktop"
+    mode: "0644"
+  loop: "{{ pixi_environments }}"
+
+- name: Display installation summary
+  ansible.builtin.debug:
+    msg: |
+      Pixi has been installed successfully!
+      Installed environments: {{ pixi_environments | join(', ') }}
+      Location: {{ ai_tools_dir }}
+      
+      To use an environment, run:
+      cd {{ ai_tools_dir }}/<environment_name>
+      pixi shell
