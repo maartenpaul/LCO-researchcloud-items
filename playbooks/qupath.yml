@@ -1,0 +1,6 @@
+---
+- name: Install and Configure QuPath
+  hosts: localhost
+  become: yes
+  roles:
+    - qupath

@@ -1,0 +1,54 @@
+---
+- name: Install system dependencies
+  ansible.builtin.apt:
+    name: [wget, unzip, libxcb-xinerama0]
+    state: present
+    update_cache: true
+
+- name: Download and Extract QuPath
+  ansible.builtin.unarchive:
+    src: "{{ qupath_url }}"
+    dest: "/opt"
+    remote_src: yes
+    creates: "/opt/QuPath/bin/QuPath"
+
+- name: Create Common Data directory
+  ansible.builtin.file:
+    path: "{{ common_data_dir }}"
+    state: directory
+    mode: '0777'
+
+- name: Download Extensions from Zenodo
+  ansible.builtin.unarchive:
+    src: "{{ common_data_url }}"
+    dest: "{{ common_data_dir }}"
+    remote_src: yes
+
+- name: Identify all user home directories
+  ansible.builtin.find:
+    paths: [/home]
+    file_type: directory
+  register: user_homedirs
+
+- name: Configure QuPath for each user
+  ansible.builtin.block:
+    - name: Copy initialization script
+      ansible.builtin.copy:
+        src: QuPath_setPaths.groovy
+        dest: "/tmp/QuPath_setPaths.groovy"
+
+    - name: Run QuPath initialization as each user
+      ansible.builtin.shell: |
+        export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"
+        /opt/QuPath/bin/QuPath script /tmp/QuPath_setPaths.groovy
+      become: yes
+      become_user: "{{ item.path | basename }}"
+      loop: "{{ user_homedirs.files }}"
+      # Skip system users or non-researcher accounts if necessary
+      when: item.path | basename not in ['syslog', 'ubuntu'] 
+
+- name: Install Desktop Launcher
+  ansible.builtin.template:
+    src: qupath.desktop.j2
+    dest: "/usr/share/applications/qupath.desktop"
+    mode: "0644"
