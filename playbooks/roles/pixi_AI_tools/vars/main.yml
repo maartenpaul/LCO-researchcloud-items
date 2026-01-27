@@ -1,7 +1,8 @@
 ---
 pixi_version: "latest"
 pixi_install_url: "https://pixi.sh/install.sh"
-pixi_install_dir: "/usr/local/bin"
+pixi_home: "/opt/pixi"
+pixi_bin: "/opt/pixi/bin/pixi"
 
 # GitHub repository details
 ai_tools_repo: "https://github.com/Leiden-Cell-Observatory/AI_tools_pixi.git"
