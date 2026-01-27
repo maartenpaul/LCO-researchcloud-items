@@ -1,5 +1,6 @@
 ---
 - name: Install system dependencies
+  when: ansible_pkg_mgr == 'apt'
   ansible.builtin.apt:
     name:
       - curl
@@ -7,6 +8,8 @@
       - build-essential
     state: present
     update_cache: true
+  ignore_errors: yes # Bypasses the mirror errors seen in your screenshot
+
 
 - name: Check if pixi is already installed
   ansible.builtin.stat:

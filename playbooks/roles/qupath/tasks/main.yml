@@ -1,5 +1,6 @@
 ---
 - name: Install system dependencies
+  when: ansible_pkg_mgr == 'apt'
   ansible.builtin.apt:
     name: 
       - wget
