@@ -1,6 +1,0 @@
----
-- name: Install and Configure Pixi AI tool Environments
-  hosts: localhost
-  become: yes
-  roles:
-    - pixi_AI_tools

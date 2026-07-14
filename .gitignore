@@ -1,0 +1,5 @@
+# Python virtualenv used for linting tools
+.venv/
+
+# ansible-galaxy collection cache
+.ansible/
