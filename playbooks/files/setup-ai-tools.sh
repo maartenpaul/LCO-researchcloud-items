@@ -111,6 +111,11 @@ DESKTOP_GUI
     fi
 done
 
+# Desktop environments that enforce the executable bit (GNOME, some XFCE
+# configs) refuse to launch a .desktop file that is not marked +x. The
+# heredocs above create them 0644, so mark them executable here.
+chmod +x "${DESKTOP_DIR}"/pixi-*.desktop 2>/dev/null || true
+
 if [ -d "${HOME}/Desktop" ] || [ -d "/etc/xdg/autostart" ]; then
     mkdir -p "${HOME}/Desktop"
     for desktop_file in "${DESKTOP_DIR}"/pixi-*.desktop; do
