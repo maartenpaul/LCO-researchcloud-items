@@ -1,36 +1,55 @@
 ---
-# SRC parameters — set through the portal as environment variables.
+# SRC parameters. A component parameter reaches an Ansible playbook as a
+# variable named after its key — not as an environment variable, which is the
+# PowerShell/Windows mechanism. Reading these with lookup('env', ...) alone
+# would silently ignore everything set in the portal and always use the
+# defaults below. The env lookup is kept only as a fallback so the role can be
+# driven from a shell when testing outside SRC.
 
-# Base path for bind-mounted OMERO data (e.g. "/data/omero" on attached
-# storage). Subdirectories "postgres" and "omero" are created underneath.
-# Leave empty to use Docker named volumes on the system disk instead.
-omero_data_path: "{{ lookup('env', 'OMERO_DATA_PATH') | default('', true) }}"
+# Base path for bind-mounted OMERO data. SRC mounts attached storage at
+# /data/<storage-name>, so the value depends on the workspace — mark this
+# parameter Required in the component and SRC will ask the workspace-user for
+# it at creation time, when the name is known. Subdirectories "postgres" and
+# "omero" are created underneath. Empty falls back to Docker named volumes on
+# the system disk, which is fine for a scratch workspace but will fill the root
+# disk on a real one.
+omero_data_path: "{{ OMERO_DATA_PATH | default(lookup('env', 'OMERO_DATA_PATH'), true) | default('', true) }}"
 
 # Password for the OMERO "root" account. Empty → a random password is
 # generated at deploy time and stored in /opt/omero/credentials (read with
 # sudo). Only applied when OMERO.server initializes a fresh database, so
 # it stays stable on redeploys.
-omero_root_password: "{{ lookup('env', 'OMERO_ROOT_PASSWORD') | default('', true) }}"
+omero_root_password: >-
+  {{ OMERO_ROOT_PASSWORD | default(lookup('env', 'OMERO_ROOT_PASSWORD'), true)
+     | default('', true) }}
 
 # When true, the workspace URL (port 443) requires an SRAM login before
 # traffic reaches OMERO's own login page. When false, port 443 proxies
 # straight to OMERO.
-omero_require_sram_auth: "{{ lookup('env', 'OMERO_REQUIRE_SRAM_AUTH') | default('true', true) }}"
+omero_require_sram_auth: >-
+  {{ OMERO_REQUIRE_SRAM_AUTH | default(lookup('env', 'OMERO_REQUIRE_SRAM_AUTH'), true)
+     | default('true', true) }}
 
 # When true, an additional nginx server block exposes OMERO over HTTPS on
 # omero_direct_port, reusing the workspace certificate, without SRAM auth.
-omero_direct_access: "{{ lookup('env', 'OMERO_DIRECT_ACCESS') | default('false', true) }}"
-omero_direct_port: "{{ lookup('env', 'OMERO_DIRECT_PORT') | default('8443', true) }}"
+omero_direct_access: >-
+  {{ OMERO_DIRECT_ACCESS | default(lookup('env', 'OMERO_DIRECT_ACCESS'), true)
+     | default('false', true) }}
+omero_direct_port: "{{ OMERO_DIRECT_PORT | default(lookup('env', 'OMERO_DIRECT_PORT'), true) | default('8443', true) }}"
 
 # Extra origins to add to Django's CSRF allow-list, comma-separated and with
 # the scheme included (e.g. "https://omero.example.org"). The workspace URL —
 # and the direct endpoint when enabled — are always trusted; this is only for
 # additional names such as a CNAME pointing at the workspace.
-omero_extra_csrf_origins: "{{ lookup('env', 'OMERO_EXTRA_CSRF_ORIGINS') | default('', true) }}"
+omero_extra_csrf_origins: >-
+  {{ OMERO_EXTRA_CSRF_ORIGINS | default(lookup('env', 'OMERO_EXTRA_CSRF_ORIGINS'), true)
+     | default('', true) }}
 
 # Container image tags ("5" tracks the latest OMERO 5 release).
-omero_image_tag: "{{ lookup('env', 'OMERO_IMAGE_TAG') | default('5', true) }}"
-omero_postgres_tag: "{{ lookup('env', 'OMERO_POSTGRES_TAG') | default('16', true) }}"
+omero_image_tag: "{{ OMERO_IMAGE_TAG | default(lookup('env', 'OMERO_IMAGE_TAG'), true) | default('5', true) }}"
+omero_postgres_tag: >-
+  {{ OMERO_POSTGRES_TAG | default(lookup('env', 'OMERO_POSTGRES_TAG'), true)
+     | default('16', true) }}
 
 # Internal defaults — normally not changed.
 omero_web_port: 4080

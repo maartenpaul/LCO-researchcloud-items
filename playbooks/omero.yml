@@ -6,8 +6,14 @@
 # reverse proxy, with optional SRAM authentication and an optional
 # direct HTTPS endpoint. All logic lives in roles/omero; see its README.
 #
-# SRC Parameters (set as environment variables or via the SRC portal):
-#   OMERO_DATA_PATH          — bind-mount base for data, e.g. "/data/omero"
+# SRC Parameters. Declared in the component wizard; SRC passes each one to this
+# playbook as an Ansible variable named after its key. The role also accepts the
+# same names as environment variables, which is only meant for testing outside
+# SRC.
+#   OMERO_DATA_PATH          — bind-mount base for data. SRC mounts attached
+#                              storage at /data/<storage-name>, so mark this
+#                              parameter Required and let SRC ask the
+#                              workspace-user at creation time
 #                              (default: empty → Docker named volumes)
 #   OMERO_ROOT_PASSWORD      — OMERO root password, first boot only
 #                              (default: generated random password stored

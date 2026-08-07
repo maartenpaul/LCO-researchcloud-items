@@ -18,9 +18,11 @@ OMERO.web only listens on localhost; all external web traffic goes through nginx
 
 ## SRC Parameters
 
+Declare these in step 3 of the component wizard. SRC hands each parameter to the playbook as an **Ansible variable** named after its key — environment variables are the PowerShell/Windows mechanism, not the Ansible one. The role reads the variable first and falls back to an environment variable of the same name, which is only there so the playbook can be driven from a shell when testing outside SRC.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `OMERO_DATA_PATH` | *(empty)* | Base path for bind-mounted data, e.g. `/data/omero` on attached storage. Empty → Docker named volumes on the system disk. |
+| `OMERO_DATA_PATH` | *(empty)* | Base path for bind-mounted data. Empty → Docker named volumes on the system disk. See [Data storage](#data-storage) — this one should be marked **Required**. |
 | `OMERO_ROOT_PASSWORD` | generated | Password of the OMERO `root` account. When not set, a random 20-character password is generated and stored in `/opt/omero/credentials` (mode 0600, read with `sudo cat /opt/omero/credentials`). Only applied when the server initializes a fresh database — changing it later requires `omero config set` inside the container. |
 | `OMERO_REQUIRE_SRAM_AUTH` | `true` | `true`: the workspace URL requires an SRAM login (members of the workspace's collaboration) before OMERO's own login page. `false`: port 443 proxies straight to OMERO. |
 | `OMERO_DIRECT_ACCESS` | `false` | `true`: additionally expose OMERO over HTTPS on `OMERO_DIRECT_PORT`, reusing the workspace certificate, without SRAM auth. |
@@ -52,6 +54,14 @@ On a live workspace you can switch without re-running the component:
 
 The path is read at deploy time. To move an existing deployment: stop the stack (`docker compose -f /opt/omero/docker-compose.yml down`), copy the data to the new location, re-run the component with the new `OMERO_DATA_PATH`.
 
+### Why `OMERO_DATA_PATH` cannot have a fixed value
+
+SRC mounts attached storage at `/data/<storage-name>`, where the name is chosen per workspace (on one test workspace: `/data/nlbi-omero` on `/dev/vdb1`). The catalog item is defined before anyone picks that name, so no Fixed value can be right for every workspace.
+
+Mark the parameter **Required** in the component instead. Per the SRC override hierarchy (`component < catalog item < workspace-user`), a value the catalog item does not supply is presented to the workspace-user at creation time — the point at which the storage name is actually known.
+
+Leaving it empty is not harmless: OMERO image data then lands in Docker named volumes on the system disk, which is small on a standard workspace and will fill up.
+
 ## Prerequisites
 
 Catalog item composition, in order:
@@ -78,10 +88,15 @@ First start takes a few minutes: images are pulled and OMERO.server initializes 
 
 ### Running manually (for testing)
 
+Pass parameters as extra-vars, the same way SRC does — this exercises the real code path:
+
 ```bash
 sudo ansible-playbook playbooks/omero.yml
-sudo env OMERO_DATA_PATH=/data/omero OMERO_DIRECT_ACCESS=true ansible-playbook playbooks/omero.yml
+sudo ansible-playbook playbooks/omero.yml \
+  -e OMERO_DATA_PATH=/data/omero -e OMERO_DIRECT_ACCESS=true
 ```
+
+The equivalent environment variables also work (`sudo env OMERO_DATA_PATH=… ansible-playbook …`), but that fallback exists only for convenience — testing solely that way will not catch a parameter the playbook fails to read as a variable.
 
 ## Role layout
 
