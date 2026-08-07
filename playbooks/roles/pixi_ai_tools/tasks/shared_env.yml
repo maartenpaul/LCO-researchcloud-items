@@ -53,12 +53,21 @@
     force: false
   become: true
 
-- name: Make the shared checkout world-readable
-  ansible.builtin.file:
-    path: "{{ pixi_ai_tools_shared_dir }}"
-    state: directory
-    mode: "u=rwX,go=rX"
-    recurse: true
+# Only the repository content needs opening up; the .pixi/ environment trees
+# are pixi's own and must be left alone. Recursing into them is actively
+# harmful: their files are hardlinks into the shared cache, so an absolute mode
+# like u=rwX,go=rX strips group-write from ~45k cache entries — undoing the
+# setfacl below, which the next deploy then restores, so the two tasks fight
+# over the same inodes and the task never reports "ok". Adding rX rather than
+# assigning an absolute mode keeps this idempotent whatever the umask was.
+- name: Make the shared checkout readable by everyone
+  ansible.builtin.command:
+    cmd: >-
+      find {{ pixi_ai_tools_shared_dir }} -name .pixi -prune -o
+      ( -type d -not -perm -go=rx -o -type f -not -perm -go=r )
+      -print -exec chmod go+rX {} +
+  register: pixi_ai_tools_readable
+  changed_when: pixi_ai_tools_readable.stdout | length > 0
 
 - name: Discover tools in the shared checkout
   ansible.builtin.find:
