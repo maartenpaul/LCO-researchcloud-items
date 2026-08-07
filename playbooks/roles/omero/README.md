@@ -42,7 +42,7 @@ The two modes are independent nginx layers in front of the same OMERO:
 On a live workspace you can switch without re-running the component:
 
 - **Toggle SRAM auth on 443:** edit `/etc/nginx/app-location-conf.d/omero.conf` and remove or restore the five lines between the `SRAM authentication` markers, then `sudo nginx -s reload`.
-- **Toggle direct access:** remove or restore `/etc/nginx/conf.d/omero-direct.conf`, run `sudo nginx -s reload`, and close or open the port in the workspace's security group. With the config file in place, opening/closing the security-group port alone is enough to expose or hide the endpoint.
+- **Toggle direct access:** remove or restore `/etc/nginx/conf.d/omero-direct.conf`, run `sudo nginx -s reload`, and close or open the port in the workspace's security group via the SRC dashboard. With the config file in place, opening/closing the security-group port alone is enough to expose or hide the endpoint.
 
 ## Data storage
 
@@ -62,7 +62,7 @@ Catalog item composition, in order:
 | SURF nginx component | Yes | Provides the HTTPS reverse proxy, the workspace TLS certificate (acme.sh, detected from the live nginx config), and the SRAM auth scaffolding (`/validate`, `@custom_401`) |
 | This OMERO component | — | Last |
 
-Opening ports `4063`/`4064` (and `OMERO_DIRECT_PORT` when used) in the workspace security group is done outside this component, via the SRC portal / cloud provider.
+Opening ports `4063`/`4064` (and `OMERO_DIRECT_PORT` when used) in the workspace security group is done outside this component, through the SRC dashboard. The role deliberately does not touch any host firewall.
 
 ## Usage
 
@@ -91,7 +91,7 @@ sudo env OMERO_DATA_PATH=/data/omero OMERO_DIRECT_ACCESS=true ansible-playbook p
 | `tasks/prereqs.yml` | Docker/Compose/nginx/cert checks, compose command detection |
 | `tasks/storage.yml` | Bind-mount directories with container uids |
 | `tasks/compose.yml` | Compose project deploy, pull, up, readiness wait; generates credentials file when no password is set |
-| `tasks/nginx.yml` | Location block, direct server block, ufw rules |
+| `tasks/nginx.yml` | Location block, direct server block |
 | `templates/docker-compose.yml.j2` | The compose stack (adapted from docker-example-omero) |
 | `templates/omero-location.conf.j2` | Port-443 location block (SRAM auth optional) |
 | `templates/omero-direct.conf.j2` | Direct HTTPS server block |
@@ -109,7 +109,7 @@ sudo nginx -t                           # config must be valid
 
 **SRAM login loops or fails.** The auth scaffolding lives in `/etc/nginx/app-location-conf.d/authentication.conf` (SURF nginx component). OMERO only adds its own `omero.conf` next to it — verify both are present.
 
-**Direct endpoint unreachable.** In order: config file present (`ls /etc/nginx/conf.d/omero-direct.conf`), nginx reloaded, ufw allows the port, and the workspace **security group** allows it — the last one is the usual suspect.
+**Direct endpoint unreachable.** In order: config file present (`ls /etc/nginx/conf.d/omero-direct.conf`), nginx reloaded, and the port opened in the workspace **security group** via the SRC dashboard — the last one is the usual suspect. `sudo ss -lntp | grep 8443` confirms whether nginx is listening at all.
 
 **Bind mount permission errors.** `postgres` needs uid 999 on `<path>/postgres`, `omero-server` needs uid 1000 on `<path>/omero`. The role sets this at deploy time; if you moved data manually: `sudo chown -R 999:999 <path>/postgres && sudo chown -R 1000:1000 <path>/omero`.
 

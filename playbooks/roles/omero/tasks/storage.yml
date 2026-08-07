@@ -10,13 +10,17 @@
     mode: "0755"
   when: omero_data_path
 
+# PostgreSQL refuses to start unless PGDATA is u=rwx or u=rwx,g=rx, and the
+# postgres entrypoint chmods it to 0700 on every start. Creating it as 0700
+# matches that, so redeploys stay idempotent instead of repeatedly widening
+# the permissions of a live database directory.
 - name: Create the PostgreSQL data directory (container uid 999)
   ansible.builtin.file:
     path: "{{ omero_data_path }}/postgres"
     state: directory
     owner: "999"
     group: "999"
-    mode: "0755"
+    mode: "0700"
   when: omero_data_path
 
 - name: Create the OMERO data directory (container uid 1000)

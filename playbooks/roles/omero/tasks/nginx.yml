@@ -25,27 +25,5 @@
   when: not (omero_direct_access | bool)
   notify: Reload nginx
 
-- name: Check whether ufw is active
-  ansible.builtin.command: ufw status
-  register: omero_ufw_status
-  failed_when: false
-  changed_when: false
-
-- name: Allow the OMERO client ports in ufw
-  ansible.builtin.command: "ufw allow {{ item }}/tcp"
-  register: omero_ufw_rule
-  failed_when: false
-  changed_when: "'Skipping' not in omero_ufw_rule.stdout and 'added' in omero_ufw_rule.stdout"
-  loop:
-    - "4063"
-    - "4064"
-  when: "'Status: active' in omero_ufw_status.stdout"
-
-- name: Allow the direct-access port in ufw
-  ansible.builtin.command: "ufw allow {{ omero_direct_port }}/tcp"
-  register: omero_ufw_direct_rule
-  failed_when: false
-  changed_when: "'Skipping' not in omero_ufw_direct_rule.stdout and 'added' in omero_ufw_direct_rule.stdout"
-  when:
-    - "'Status: active' in omero_ufw_status.stdout"
-    - omero_direct_access | bool
+# Ports 4063/4064 (and omero_direct_port) are opened in the workspace security
+# group through the SRC dashboard, not from this component.

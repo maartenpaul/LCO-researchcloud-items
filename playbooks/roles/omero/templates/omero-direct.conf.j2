@@ -6,7 +6,7 @@
 #
 # To toggle on a live workspace: remove or restore this file, run
 # "nginx -s reload", and close or open port {{ omero_direct_port }} in the
-# workspace security group.
+# workspace security group via the SRC dashboard.
 server {
     listen {{ omero_direct_port }} ssl;
 {% if omero_listen_ipv6 | bool %}
