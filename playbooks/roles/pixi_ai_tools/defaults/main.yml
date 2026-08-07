@@ -1,9 +1,21 @@
 ---
-# SRC parameters — set through the portal as environment variables.
-pixi_ai_tools_version: "{{ lookup('env', 'PIXI_AI_TOOLS_VERSION') | default('master', true) }}"
+# SRC parameters. A component parameter reaches an Ansible playbook as a
+# variable named after its key — not as an environment variable, which is the
+# PowerShell/Windows mechanism. Reading these with lookup('env', ...) alone
+# silently ignored everything set in the portal and always used the defaults
+# below. The env lookup is kept only as a fallback so the role can be driven
+# from a shell when testing outside SRC.
+pixi_ai_tools_version: >-
+  {{ PIXI_AI_TOOLS_VERSION | default(lookup('env', 'PIXI_AI_TOOLS_VERSION'), true)
+     | default('master', true) }}
+
 # Comma-separated tool list to pre-install, or "all". Tools that are not
 # pre-installed get no shared kernel — users cannot install into /opt.
-pixi_ai_tools_preload: "{{ lookup('env', 'PIXI_AI_TOOLS_PRELOAD') | default('all', true) }}"
+# "all" builds every environment in the repository, which is a long deploy;
+# naming just the tools a course needs keeps it short.
+pixi_ai_tools_preload: >-
+  {{ PIXI_AI_TOOLS_PRELOAD | default(lookup('env', 'PIXI_AI_TOOLS_PRELOAD'), true)
+     | default('all', true) }}
 
 pixi_ai_tools_home: /usr/local
 pixi_ai_tools_bin: /usr/local/bin/pixi
