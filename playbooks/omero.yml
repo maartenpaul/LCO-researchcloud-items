@@ -17,6 +17,9 @@
 #   OMERO_DIRECT_ACCESS      — extra HTTPS endpoint without SRAM auth
 #                              (default: "false")
 #   OMERO_DIRECT_PORT        — port for the direct endpoint (default: "8443")
+#   OMERO_EXTRA_CSRF_ORIGINS — extra origins to trust for Django's CSRF check,
+#                              comma-separated, scheme included. The workspace
+#                              URL and the direct endpoint are always trusted.
 #   OMERO_IMAGE_TAG          — OMERO image tag (default: "5")
 #   OMERO_POSTGRES_TAG       — PostgreSQL image tag (default: "16")
 

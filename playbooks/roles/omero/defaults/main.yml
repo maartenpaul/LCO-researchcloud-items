@@ -22,6 +22,12 @@ omero_require_sram_auth: "{{ lookup('env', 'OMERO_REQUIRE_SRAM_AUTH') | default(
 omero_direct_access: "{{ lookup('env', 'OMERO_DIRECT_ACCESS') | default('false', true) }}"
 omero_direct_port: "{{ lookup('env', 'OMERO_DIRECT_PORT') | default('8443', true) }}"
 
+# Extra origins to add to Django's CSRF allow-list, comma-separated and with
+# the scheme included (e.g. "https://omero.example.org"). The workspace URL —
+# and the direct endpoint when enabled — are always trusted; this is only for
+# additional names such as a CNAME pointing at the workspace.
+omero_extra_csrf_origins: "{{ lookup('env', 'OMERO_EXTRA_CSRF_ORIGINS') | default('', true) }}"
+
 # Container image tags ("5" tracks the latest OMERO 5 release).
 omero_image_tag: "{{ lookup('env', 'OMERO_IMAGE_TAG') | default('5', true) }}"
 omero_postgres_tag: "{{ lookup('env', 'OMERO_POSTGRES_TAG') | default('16', true) }}"
@@ -35,6 +41,20 @@ omero_nginx_direct_conf: /etc/nginx/conf.d/omero-direct.conf
 # SRC provides workspace_fqdn as an extra var at component runtime; fall back
 # to the env var, then to the host FQDN (which is correct on SRC workspaces).
 omero_workspace_fqdn: "{{ workspace_fqdn | default(lookup('env', 'WORKSPACE_FQDN')) | default(ansible_fqdn, true) }}"
+
+# Origins Django accepts for its CSRF check. OMERO.web sits behind the nginx
+# reverse proxy and only ever sees plain HTTP on localhost, so the https
+# workspace URL has to be trusted explicitly — otherwise every POST, including
+# the login form, is rejected with "CSRF Failed: Origin checking failed". The
+# direct endpoint carries its port in the browser's Origin header, so it needs
+# an entry of its own. Kept as a list; the template serialises it to JSON,
+# because a JSON string here would be turned straight back into a list by
+# Ansible's native type coercion and then render as Python repr.
+omero_csrf_trusted_origins: >-
+  {{ ['https://' ~ omero_workspace_fqdn]
+     + (['https://' ~ omero_workspace_fqdn ~ ':' ~ omero_direct_port]
+        if omero_direct_access | bool else [])
+     + (omero_extra_csrf_origins.split(',') | map('trim') | select | list) }}
 
 # Volume source per service: bind path when omero_data_path is set,
 # otherwise the Docker named volume.

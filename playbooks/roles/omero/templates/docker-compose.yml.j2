@@ -52,6 +52,14 @@ services:
     restart: unless-stopped
     environment:
       OMEROHOST: omeroserver
+      # nginx terminates TLS, so Django sees a plain http request and would
+      # reject the https Origin of every POST (including login) unless the
+      # workspace URL is trusted explicitly.
+      CONFIG_omero_web_csrf__trusted__origins: '{{ omero_csrf_trusted_origins | to_json }}'
+      # Let Django know the original request was https, so it builds https URLs
+      # and treats the session as secure. nginx always overwrites
+      # X-Forwarded-Proto, so a client cannot forge it.
+      CONFIG_omero_web_secure__proxy__ssl__header: '["HTTP_X_FORWARDED_PROTO", "https"]'
     networks:
       - omero
     ports:

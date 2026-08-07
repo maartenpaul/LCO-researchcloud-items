@@ -25,6 +25,7 @@ OMERO.web only listens on localhost; all external web traffic goes through nginx
 | `OMERO_REQUIRE_SRAM_AUTH` | `true` | `true`: the workspace URL requires an SRAM login (members of the workspace's collaboration) before OMERO's own login page. `false`: port 443 proxies straight to OMERO. |
 | `OMERO_DIRECT_ACCESS` | `false` | `true`: additionally expose OMERO over HTTPS on `OMERO_DIRECT_PORT`, reusing the workspace certificate, without SRAM auth. |
 | `OMERO_DIRECT_PORT` | `8443` | Port for the direct endpoint. |
+| `OMERO_EXTRA_CSRF_ORIGINS` | *(empty)* | Extra origins to trust for Django's CSRF check, comma-separated and with the scheme (`https://omero.example.org`). The workspace URL — and the direct endpoint when enabled — are always trusted; only needed for an extra name such as a CNAME. |
 | `OMERO_IMAGE_TAG` | `5` | OMERO server/web image tag (`5` tracks the latest OMERO 5 release). |
 | `OMERO_POSTGRES_TAG` | `16` | PostgreSQL image tag. |
 
@@ -110,6 +111,15 @@ sudo nginx -t                           # config must be valid
 **SRAM login loops or fails.** The auth scaffolding lives in `/etc/nginx/app-location-conf.d/authentication.conf` (SURF nginx component). OMERO only adds its own `omero.conf` next to it — verify both are present.
 
 **Direct endpoint unreachable.** In order: config file present (`ls /etc/nginx/conf.d/omero-direct.conf`), nginx reloaded, and the port opened in the workspace **security group** via the SRC dashboard — the last one is the usual suspect. `sudo ss -lntp | grep 8443` confirms whether nginx is listening at all.
+
+**`CSRF Failed: Origin checking failed - https://… does not match any trusted origins`.** Django compares the browser's `Origin` header against its trusted list, and OMERO.web only ever sees plain HTTP from nginx, so the https URL must be trusted explicitly. The role does this via `CONFIG_omero_web_csrf__trusted__origins`. Check what actually reached the container:
+
+```bash
+sudo docker exec omero-omeroweb-1 \
+  /opt/omero/web/venv3/bin/omero config get | grep -E 'csrf|proxy'
+```
+
+If the workspace URL is missing, `omero_workspace_fqdn` was resolved wrong — verify the FQDN and re-run the component. Reaching OMERO under a name the role does not know about (a CNAME, say) needs `OMERO_EXTRA_CSRF_ORIGINS`.
 
 **Bind mount permission errors.** `postgres` needs uid 999 on `<path>/postgres`, `omero-server` needs uid 1000 on `<path>/omero`. The role sets this at deploy time; if you moved data manually: `sudo chown -R 999:999 <path>/postgres && sudo chown -R 1000:1000 <path>/omero`.
 
