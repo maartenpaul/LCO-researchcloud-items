@@ -2,13 +2,14 @@
 - name: Install system dependencies
   when: ansible_pkg_mgr == 'apt'
   ansible.builtin.apt:
-    name: 
+    name:
       - wget
       - unzip
       - libxcb-xinerama0
     state: present
     update_cache: yes
-  ignore_errors: yes # Bypasses the mirror errors seen in your screenshot
+  # Apt mirror hiccups on a fresh workspace should not fail the whole build.
+  failed_when: false
 
 - name: Download and Extract QuPath
   ansible.builtin.unarchive:
@@ -19,14 +20,14 @@
 
 - name: Create Common Data directory
   ansible.builtin.file:
-    path: "{{ common_data_dir }}"
+    path: "{{ qupath_common_data_dir }}"
     state: directory
     mode: '0777'
 
 - name: Download Extensions from Zenodo
   ansible.builtin.unarchive:
-    src: "{{ common_data_url }}"
-    dest: "{{ common_data_dir }}"
+    src: "{{ qupath_common_data_url }}"
+    dest: "{{ qupath_common_data_dir }}"
     remote_src: yes
 
 - name: Configure QuPath preferences
@@ -36,7 +37,10 @@
   # This targets the researcher user (e.g., ubuntu)
   become: yes
   become_user: "{{ ansible_user_id }}"
-  ignore_errors: yes 
+  # Writes the preferences file every run; a headless QuPath that exits
+  # non-zero should not fail the workspace build.
+  changed_when: true
+  failed_when: false
 
 - name: Install Desktop Launcher
   ansible.builtin.template:

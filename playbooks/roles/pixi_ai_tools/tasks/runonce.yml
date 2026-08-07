@@ -1,0 +1,26 @@
+---
+- name: Install uusrc.general Ansible collection
+  ansible.builtin.command:
+    cmd: ansible-galaxy collection install -r {{ playbook_dir }}/requirements.yml --force
+  register: pixi_ai_tools_galaxy_install
+  changed_when: "'Installing' in pixi_ai_tools_galaxy_install.stdout"
+
+- name: Include uusrc.general.runonce role
+  ansible.builtin.include_role:
+    name: uusrc.general.runonce
+
+- name: Deploy per-user setup script to runonce.d
+  ansible.builtin.copy:
+    src: setup-ai-tools.sh
+    dest: "{{ pixi_ai_tools_runonce_dir }}/setup-ai-tools.sh"
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Set repo version in runonce environment
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    regexp: '^PIXI_AI_TOOLS_VERSION='
+    line: "PIXI_AI_TOOLS_VERSION={{ pixi_ai_tools_version }}"
+    create: true
+    mode: "0644"

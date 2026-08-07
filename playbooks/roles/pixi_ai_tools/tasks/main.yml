@@ -1,0 +1,30 @@
+---
+- name: Wait for system to become reachable
+  ansible.builtin.wait_for_connection:
+    timeout: 300
+
+- name: Gather facts
+  ansible.builtin.setup:
+
+- name: Verify Debian-family OS
+  ansible.builtin.fail:
+    msg: "This component only supports Debian-family distributions (Ubuntu)."
+  when: ansible_facts['os_family'] != 'Debian'
+
+- name: Install pixi and its system dependencies
+  ansible.builtin.import_tasks: pixi.yml
+
+- name: Set up the per-user runonce mechanism
+  ansible.builtin.import_tasks: runonce.yml
+
+- name: Report GPU availability
+  ansible.builtin.import_tasks: gpu.yml
+
+- name: Deploy the shared tool checkout and package cache
+  ansible.builtin.import_tasks: shared_env.yml
+
+- name: Register system-wide Jupyter kernels
+  ansible.builtin.import_tasks: kernels.yml
+
+- name: Integrate with JupyterHub when present
+  ansible.builtin.import_tasks: jupyterhub.yml

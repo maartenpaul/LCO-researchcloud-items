@@ -1,0 +1,27 @@
+# OMERO.web on the main SRC HTTPS server (port 443).
+# Managed by the omero SRC component — re-running the component overwrites
+# this file.
+#
+# To toggle SRAM authentication on a live workspace, edit the marked lines
+# below and run "nginx -s reload".
+location / {
+{% if omero_require_sram_auth | bool %}
+    # --- SRAM authentication (remove to open OMERO directly) ---
+    error_page 401 = @custom_401;
+    auth_request /validate;
+    auth_request_set $username $upstream_http_username;
+    auth_request_set $src_roles $upstream_http_src_co_roles;
+    proxy_set_header REMOTE_USER $username;
+    proxy_set_header REMOTE_ROLES $src_roles;
+    # --- end of SRAM authentication ---
+{% endif %}
+    proxy_pass http://127.0.0.1:{{ omero_web_port }};
+    proxy_redirect http://127.0.0.1:{{ omero_web_port }}/ $scheme://$host/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 300;
+}

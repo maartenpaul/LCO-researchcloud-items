@@ -1,0 +1,24 @@
+---
+- name: Wait for system to become reachable
+  ansible.builtin.wait_for_connection:
+    timeout: 300
+
+- name: Gather facts
+  ansible.builtin.setup:
+
+- name: Verify Debian-family OS
+  ansible.builtin.fail:
+    msg: "This component only supports Debian-family distributions (Ubuntu)."
+  when: ansible_facts['os_family'] != 'Debian'
+
+- name: Check prerequisites (Docker, Compose, SRC nginx)
+  ansible.builtin.import_tasks: prereqs.yml
+
+- name: Prepare bind-mounted data directories
+  ansible.builtin.import_tasks: storage.yml
+
+- name: Deploy the OMERO Docker Compose stack
+  ansible.builtin.import_tasks: compose.yml
+
+- name: Configure nginx access (SRAM-protected and/or direct)
+  ansible.builtin.import_tasks: nginx.yml

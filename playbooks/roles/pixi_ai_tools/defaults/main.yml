@@ -1,0 +1,16 @@
+---
+# SRC parameters — set through the portal as environment variables.
+pixi_ai_tools_version: "{{ lookup('env', 'PIXI_AI_TOOLS_VERSION') | default('master', true) }}"
+# Comma-separated tool list to pre-install, or "all". Tools that are not
+# pre-installed get no shared kernel — users cannot install into /opt.
+pixi_ai_tools_preload: "{{ lookup('env', 'PIXI_AI_TOOLS_PRELOAD') | default('all', true) }}"
+
+pixi_ai_tools_home: /usr/local
+pixi_ai_tools_bin: /usr/local/bin/pixi
+pixi_ai_tools_runonce_dir: /etc/runonce.d
+pixi_ai_tools_repo_url: https://github.com/Leiden-Cell-Observatory/AI_tools_pixi.git
+# One shared, root-owned copy of the tools + one shared package cache.
+# Per-user clones would multiply 5-10 GB per env by the number of students.
+pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
+pixi_ai_tools_cache_dir: /opt/pixi-cache
+pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels

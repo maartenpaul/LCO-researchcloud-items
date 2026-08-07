@@ -1,0 +1,29 @@
+---
+# omero.yml — SURF Research Cloud component entry point.
+#
+# Deploys OMERO.server + OMERO.web with Docker (based on
+# https://github.com/ome/docker-example-omero) behind the SRC nginx
+# reverse proxy, with optional SRAM authentication and an optional
+# direct HTTPS endpoint. All logic lives in roles/omero; see its README.
+#
+# SRC Parameters (set as environment variables or via the SRC portal):
+#   OMERO_DATA_PATH          — bind-mount base for data, e.g. "/data/omero"
+#                              (default: empty → Docker named volumes)
+#   OMERO_ROOT_PASSWORD      — OMERO root password, first boot only
+#                              (default: generated random password stored
+#                              in /opt/omero/credentials)
+#   OMERO_REQUIRE_SRAM_AUTH  — require SRAM login on port 443
+#                              (default: "true")
+#   OMERO_DIRECT_ACCESS      — extra HTTPS endpoint without SRAM auth
+#                              (default: "false")
+#   OMERO_DIRECT_PORT        — port for the direct endpoint (default: "8443")
+#   OMERO_IMAGE_TAG          — OMERO image tag (default: "5")
+#   OMERO_POSTGRES_TAG       — PostgreSQL image tag (default: "16")
+
+- name: Deploy OMERO
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  roles:
+    - omero

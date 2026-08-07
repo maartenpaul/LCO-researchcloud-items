@@ -1,0 +1,29 @@
+---
+# Only runs when OMERO_DATA_PATH is set — otherwise Docker named volumes
+# are used and there is nothing to prepare.
+- name: Create the OMERO data base directory
+  ansible.builtin.file:
+    path: "{{ omero_data_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: omero_data_path
+
+- name: Create the PostgreSQL data directory (container uid 999)
+  ansible.builtin.file:
+    path: "{{ omero_data_path }}/postgres"
+    state: directory
+    owner: "999"
+    group: "999"
+    mode: "0755"
+  when: omero_data_path
+
+- name: Create the OMERO data directory (container uid 1000)
+  ansible.builtin.file:
+    path: "{{ omero_data_path }}/omero"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+  when: omero_data_path

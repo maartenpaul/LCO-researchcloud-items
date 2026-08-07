@@ -1,0 +1,51 @@
+---
+- name: Deploy the OMERO location block on the SRC HTTPS server
+  ansible.builtin.template:
+    src: omero-location.conf.j2
+    dest: "{{ omero_nginx_location_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Deploy the direct-access server block
+  ansible.builtin.template:
+    src: omero-direct.conf.j2
+    dest: "{{ omero_nginx_direct_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: omero_direct_access | bool
+  notify: Reload nginx
+
+- name: Remove the direct-access server block when disabled
+  ansible.builtin.file:
+    path: "{{ omero_nginx_direct_conf }}"
+    state: absent
+  when: not (omero_direct_access | bool)
+  notify: Reload nginx
+
+- name: Check whether ufw is active
+  ansible.builtin.command: ufw status
+  register: omero_ufw_status
+  failed_when: false
+  changed_when: false
+
+- name: Allow the OMERO client ports in ufw
+  ansible.builtin.command: "ufw allow {{ item }}/tcp"
+  register: omero_ufw_rule
+  failed_when: false
+  changed_when: "'Skipping' not in omero_ufw_rule.stdout and 'added' in omero_ufw_rule.stdout"
+  loop:
+    - "4063"
+    - "4064"
+  when: "'Status: active' in omero_ufw_status.stdout"
+
+- name: Allow the direct-access port in ufw
+  ansible.builtin.command: "ufw allow {{ omero_direct_port }}/tcp"
+  register: omero_ufw_direct_rule
+  failed_when: false
+  changed_when: "'Skipping' not in omero_ufw_direct_rule.stdout and 'added' in omero_ufw_direct_rule.stdout"
+  when:
+    - "'Status: active' in omero_ufw_status.stdout"
+    - omero_direct_access | bool

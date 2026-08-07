@@ -1,0 +1,42 @@
+---
+# SRC parameters — set through the portal as environment variables.
+
+# Base path for bind-mounted OMERO data (e.g. "/data/omero" on attached
+# storage). Subdirectories "postgres" and "omero" are created underneath.
+# Leave empty to use Docker named volumes on the system disk instead.
+omero_data_path: "{{ lookup('env', 'OMERO_DATA_PATH') | default('', true) }}"
+
+# Password for the OMERO "root" account. Empty → a random password is
+# generated at deploy time and stored in /opt/omero/credentials (read with
+# sudo). Only applied when OMERO.server initializes a fresh database, so
+# it stays stable on redeploys.
+omero_root_password: "{{ lookup('env', 'OMERO_ROOT_PASSWORD') | default('', true) }}"
+
+# When true, the workspace URL (port 443) requires an SRAM login before
+# traffic reaches OMERO's own login page. When false, port 443 proxies
+# straight to OMERO.
+omero_require_sram_auth: "{{ lookup('env', 'OMERO_REQUIRE_SRAM_AUTH') | default('true', true) }}"
+
+# When true, an additional nginx server block exposes OMERO over HTTPS on
+# omero_direct_port, reusing the workspace certificate, without SRAM auth.
+omero_direct_access: "{{ lookup('env', 'OMERO_DIRECT_ACCESS') | default('false', true) }}"
+omero_direct_port: "{{ lookup('env', 'OMERO_DIRECT_PORT') | default('8443', true) }}"
+
+# Container image tags ("5" tracks the latest OMERO 5 release).
+omero_image_tag: "{{ lookup('env', 'OMERO_IMAGE_TAG') | default('5', true) }}"
+omero_postgres_tag: "{{ lookup('env', 'OMERO_POSTGRES_TAG') | default('16', true) }}"
+
+# Internal defaults — normally not changed.
+omero_web_port: 4080
+omero_project_dir: /opt/omero
+omero_nginx_location_conf: /etc/nginx/app-location-conf.d/omero.conf
+omero_nginx_direct_conf: /etc/nginx/conf.d/omero-direct.conf
+
+# SRC provides workspace_fqdn as an extra var at component runtime; fall back
+# to the env var, then to the host FQDN (which is correct on SRC workspaces).
+omero_workspace_fqdn: "{{ workspace_fqdn | default(lookup('env', 'WORKSPACE_FQDN')) | default(ansible_fqdn, true) }}"
+
+# Volume source per service: bind path when omero_data_path is set,
+# otherwise the Docker named volume.
+omero_database_volume: "{{ omero_data_path ~ '/postgres' if omero_data_path else 'database' }}"
+omero_server_volume: "{{ omero_data_path ~ '/omero' if omero_data_path else 'omero' }}"

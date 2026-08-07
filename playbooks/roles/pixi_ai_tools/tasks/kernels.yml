@@ -1,0 +1,63 @@
+---
+- name: Create system-wide kernel directories
+  ansible.builtin.file:
+    path: "{{ pixi_ai_tools_kernel_dir }}/pixi-{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ pixi_ai_tools_preload_tools }}"
+
+# System-wide kernels are visible to every user at first login, with no
+# per-user registration step. --frozen means "use the lock file as-is":
+# no solve, no write to /opt, and a kernel that starts in seconds instead
+# of timing out behind a multi-GB install.
+- name: Register system-wide Jupyter kernels for the shared environments
+  ansible.builtin.copy:
+    dest: "{{ pixi_ai_tools_kernel_dir }}/pixi-{{ item }}/kernel.json"
+    mode: "0644"
+    content: |
+      {
+        "argv": [
+          "{{ pixi_ai_tools_bin }}",
+          "run",
+          "--frozen",
+          "--manifest-path", "{{ pixi_ai_tools_shared_dir }}/{{ item }}/pixi.toml",
+          "python", "-m", "ipykernel_launcher",
+          "-f", "{connection_file}"
+        ],
+        "display_name": "{{ item }} (Pixi, shared)",
+        "language": "python",
+        "env": {
+          "PIXI_CACHE_DIR": "{{ pixi_ai_tools_cache_dir }}"
+        }
+      }
+  loop: "{{ pixi_ai_tools_preload_tools }}"
+
+# Kernelspecs in a user's ~/.local/share/jupyter/kernels take precedence over
+# the system ones with the same name. An earlier version of this component
+# registered per-user pixi-<tool> kernels pointing at a per-user clone; left
+# in place they shadow the shared kernels and each one would still kick off a
+# private multi-GB install. Only kernels that reference a per-user
+# ~/AI_tools_pixi path are removed; personal forks (pixi-<tool>-mine) are kept.
+- name: Remove per-user kernelspecs left behind by the older per-user design
+  ansible.builtin.shell:
+    cmd: |
+      removed=0
+      for k in /home/*/.local/share/jupyter/kernels/pixi-*; do
+        [ -d "$k" ] || continue
+        case "$k" in *-mine) continue ;; esac
+        if grep -qE '"/home/[^/]+/AI_tools_pixi' "$k/kernel.json" 2>/dev/null; then
+          rm -rf "$k"
+          removed=$((removed + 1))
+        fi
+      done
+      echo "removed=${removed}"
+  register: pixi_ai_tools_stale_kernels
+  changed_when: "'removed=0' not in pixi_ai_tools_stale_kernels.stdout"
+
+- name: Install the ai-tools helper for users who need to add packages
+  ansible.builtin.copy:
+    src: ai-tools
+    dest: /usr/local/bin/ai-tools
+    mode: "0755"
+    owner: root
+    group: root

@@ -1,0 +1,74 @@
+---
+- name: Create the OMERO project directory
+  ansible.builtin.file:
+    path: "{{ omero_project_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Generate a random root password when none was provided
+  ansible.builtin.set_fact:
+    omero_root_password: >-
+      {{ lookup('ansible.builtin.password', omero_project_dir + '/.root_password',
+         length=20, chars=['ascii_letters', 'digits']) }}
+    omero_root_password_generated: true
+  when: not omero_root_password
+
+- name: Restrict the generated password store
+  ansible.builtin.file:
+    path: "{{ omero_project_dir }}/.root_password"
+    owner: root
+    group: root
+    mode: "0600"
+  when: omero_root_password_generated | default(false)
+
+- name: Write a human-readable credentials file
+  ansible.builtin.copy:
+    dest: "{{ omero_project_dir }}/credentials"
+    content: |
+      OMERO administrator credentials
+      ===============================
+      User:     root
+      Password: {{ omero_root_password }}
+
+      Generated at deploy time because OMERO_ROOT_PASSWORD was not set.
+      OMERO.server only consumes this password while initializing a fresh
+      database — editing this file does NOT change the OMERO password.
+    owner: root
+    group: root
+    mode: "0600"
+  when: omero_root_password_generated | default(false)
+
+- name: Deploy the docker-compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ omero_project_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Pull the OMERO container images
+  ansible.builtin.command: "{{ omero_compose_cmd }} pull"
+  register: omero_compose_pull
+  changed_when: false
+  failed_when: omero_compose_pull.rc != 0
+  args:
+    chdir: "{{ omero_project_dir }}"
+
+- name: Start the OMERO stack
+  ansible.builtin.command: "{{ omero_compose_cmd }} up -d"
+  register: omero_compose_up
+  changed_when: "'Created' in omero_compose_up.stderr or 'Started' in omero_compose_up.stderr"
+  failed_when: omero_compose_up.rc != 0
+  args:
+    chdir: "{{ omero_project_dir }}"
+
+- name: Wait for OMERO.web to respond (first start initializes the database)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ omero_web_port }}"
+    status_code: [200, 301, 302]
+  register: omero_web_response
+  retries: 30
+  delay: 10
+  until: omero_web_response.status is defined and omero_web_response.status in [200, 301, 302]

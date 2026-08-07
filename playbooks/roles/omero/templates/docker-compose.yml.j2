@@ -1,0 +1,70 @@
+---
+# OMERO deployment for SURF Research Cloud, based on
+# https://github.com/ome/docker-example-omero
+# Managed by the omero SRC component — re-running the component overwrites
+# this file. Edit the component parameters instead.
+services:
+
+  database:
+    image: "postgres:{{ omero_postgres_tag }}"
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: omero
+      POSTGRES_DB: omero
+      POSTGRES_PASSWORD: omero
+      POSTGRES_HOST_AUTH_METHOD: trust
+    networks:
+      - omero
+    volumes:
+      - "{{ omero_database_volume }}:/var/lib/postgresql/data"
+
+  omeroserver:
+    # This container uses the tag for the latest server release of OMERO 5
+    # To upgrade to the next major release, increment the major version number
+    image: "openmicroscopy/omero-server:{{ omero_image_tag }}"
+    restart: unless-stopped
+    environment:
+      CONFIG_omero_db_host: database
+      CONFIG_omero_db_user: omero
+      CONFIG_omero_db_pass: omero
+      CONFIG_omero_db_name: omero
+      ROOTPASS: "{{ omero_root_password }}"
+    networks:
+      - omero
+    ports:
+      # OMERO.insight and other desktop clients connect here.
+      # The workspace security group must also allow these ports.
+      - "4063:4063"
+      - "4064:4064"
+    volumes:
+      - "{{ omero_server_volume }}:/OMERO"
+    depends_on:
+      - database
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 65536
+
+  omeroweb:
+    # This container uses the tag for the latest web release of OMERO 5
+    # To upgrade to the next major release, increment the major version number
+    image: "openmicroscopy/omero-web-standalone:{{ omero_image_tag }}"
+    restart: unless-stopped
+    environment:
+      OMEROHOST: omeroserver
+    networks:
+      - omero
+    ports:
+      # Localhost only — all external traffic goes through nginx.
+      - "127.0.0.1:{{ omero_web_port }}:4080"
+    depends_on:
+      - omeroserver
+
+networks:
+  omero:
+{% if not omero_data_path %}
+
+volumes:
+  database:
+  omero:
+{% endif %}

@@ -1,0 +1,44 @@
+---
+- name: Install required system packages
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - ca-certificates
+    state: present
+    update_cache: true
+
+- name: Check if pixi is already installed
+  ansible.builtin.stat:
+    path: "{{ pixi_ai_tools_bin }}"
+  register: pixi_ai_tools_binary
+
+- name: Download pixi installer
+  ansible.builtin.get_url:
+    url: https://pixi.sh/install.sh
+    dest: /tmp/pixi-install.sh
+    mode: "0755"
+  when: not pixi_ai_tools_binary.stat.exists
+
+- name: Install pixi
+  ansible.builtin.command:
+    cmd: bash /tmp/pixi-install.sh
+  environment:
+    PIXI_HOME: "{{ pixi_ai_tools_home }}"
+  args:
+    creates: "{{ pixi_ai_tools_bin }}"
+  when: not pixi_ai_tools_binary.stat.exists
+
+- name: Remove pixi installer
+  ansible.builtin.file:
+    path: /tmp/pixi-install.sh
+    state: absent
+
+- name: Verify pixi installation
+  ansible.builtin.command: "{{ pixi_ai_tools_bin }} --version"
+  register: pixi_ai_tools_pixi_version
+  changed_when: false
+
+- name: Display pixi version
+  ansible.builtin.debug:
+    msg: "Pixi version: {{ pixi_ai_tools_pixi_version.stdout }}"

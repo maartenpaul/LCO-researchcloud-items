@@ -1,0 +1,8 @@
+---
+qupath_version: "0.6.0"
+qupath_url: >-
+  https://github.com/qupath/qupath/releases/download/v{{ qupath_version }}/QuPath-v{{ qupath_version }}-Linux.tar.xz
+qupath_common_data_url: "https://zenodo.org/records/17121500/files/QuPath_Common_Data_0.6.zip?download=1"
+# making use of common data file from BIOP-desktop
+# https://github.com/BIOP/BIOP-desktop/blob/main/docker/QuPath/Dockerfile-qupath
+qupath_common_data_dir: "/opt/QuPath_Common_Data"

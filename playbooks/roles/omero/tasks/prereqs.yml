@@ -1,0 +1,96 @@
+---
+- name: Populate service facts
+  ansible.builtin.service_facts:
+
+- name: Fail if Docker is not installed or not running
+  ansible.builtin.fail:
+    msg: >-
+      Docker is not installed or not running. Put a Docker component
+      (e.g. SURF's "Docker Environment") before this OMERO component
+      in the catalog item.
+  when: services['docker.service'] is not defined or services['docker.service'].state != 'running'
+
+- name: Check for the compose plugin
+  ansible.builtin.command: docker compose version
+  register: omero_compose_plugin
+  failed_when: false
+  changed_when: false
+
+- name: Check for the docker-compose binary
+  ansible.builtin.command: docker-compose version
+  register: omero_compose_binary
+  failed_when: false
+  changed_when: false
+
+- name: Fail if no Docker Compose is available
+  ansible.builtin.fail:
+    msg: >-
+      Neither "docker compose" (plugin) nor "docker-compose" was found.
+      Install Docker Compose on the base workspace first.
+  when: omero_compose_plugin.rc != 0 and omero_compose_binary.rc != 0
+
+- name: Set the compose command fact
+  ansible.builtin.set_fact:
+    omero_compose_cmd: "{{ 'docker compose' if omero_compose_plugin.rc == 0 else 'docker-compose' }}"
+
+- name: Fail if SRC nginx is missing
+  ansible.builtin.fail:
+    msg: >-
+      nginx is not installed or not active. Put SURF's nginx component
+      before this OMERO component in the catalog item — OMERO is served
+      through its HTTPS reverse proxy.
+  when: services['nginx.service'] is not defined or services['nginx.service'].state != 'running'
+
+- name: Check for the SRC SRAM auth scaffolding
+  ansible.builtin.stat:
+    path: /etc/nginx/app-location-conf.d/authentication.conf
+  register: omero_src_auth_conf
+
+- name: Fail if SRAM auth was requested but the scaffolding is missing
+  ansible.builtin.fail:
+    msg: >-
+      OMERO_REQUIRE_SRAM_AUTH is true, but /etc/nginx/app-location-conf.d/authentication.conf
+      is absent. SURF's nginx component (with SRAM authentication) must run
+      before this component.
+  when: omero_require_sram_auth | bool and not omero_src_auth_conf.stat.exists
+
+- name: Fail if direct access was requested but the workspace FQDN is unknown
+  ansible.builtin.fail:
+    msg: >-
+      OMERO_DIRECT_ACCESS is true, but the workspace FQDN could not be
+      determined (workspace_fqdn, WORKSPACE_FQDN and the host FQDN are all
+      unset).
+  when: omero_direct_access | bool and not omero_workspace_fqdn
+
+- name: Detect the TLS certificate path used by nginx
+  ansible.builtin.shell: set -o pipefail && nginx -T 2>/dev/null | grep -m1 -oP 'ssl_certificate\s+\K\S+(?=;)'
+  register: omero_tls_cert_cmd
+  changed_when: false
+  failed_when: false
+  args:
+    executable: /bin/bash
+
+- name: Detect the TLS certificate key path used by nginx
+  ansible.builtin.shell: set -o pipefail && nginx -T 2>/dev/null | grep -m1 -oP 'ssl_certificate_key\s+\K\S+(?=;)'
+  register: omero_tls_key_cmd
+  changed_when: false
+  failed_when: false
+  args:
+    executable: /bin/bash
+
+- name: Set TLS path facts
+  ansible.builtin.set_fact:
+    omero_tls_cert: "{{ omero_tls_cert_cmd.stdout }}"
+    omero_tls_key: "{{ omero_tls_key_cmd.stdout }}"
+
+- name: Fail if direct access was requested but no certificate is configured
+  ansible.builtin.fail:
+    msg: >-
+      OMERO_DIRECT_ACCESS is true, but no ssl_certificate was found in the
+      nginx configuration. SURF's nginx component (which obtains the
+      workspace certificate via acme.sh) must run before this component.
+  when: omero_direct_access | bool and (not omero_tls_cert or not omero_tls_key)
+
+- name: Detect IPv6 availability for nginx listen directives
+  ansible.builtin.set_fact:
+    omero_listen_ipv6: "{{ ansible_default_ipv6.address is defined }}"

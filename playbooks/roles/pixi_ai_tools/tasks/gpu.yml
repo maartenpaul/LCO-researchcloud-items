@@ -1,0 +1,19 @@
+---
+- name: Check for NVIDIA GPU
+  ansible.builtin.command: nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+  register: pixi_ai_tools_nvidia_gpu
+  changed_when: false
+  failed_when: false
+
+- name: Display GPU info
+  ansible.builtin.debug:
+    msg: "GPU detected: {{ pixi_ai_tools_nvidia_gpu.stdout }}"
+  when: pixi_ai_tools_nvidia_gpu.rc == 0
+
+- name: Warn if no GPU detected
+  ansible.builtin.debug:
+    msg: >
+      No NVIDIA GPU detected. AI tool environments with CUDA dependencies
+      will still install but GPU acceleration will not be available.
+      Consider using a GPU-enabled VM flavor on Research Cloud.
+  when: pixi_ai_tools_nvidia_gpu.rc != 0
