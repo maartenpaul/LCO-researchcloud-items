@@ -1,6 +1,13 @@
 ---
 # Only runs when OMERO_DATA_PATH is set — otherwise Docker named volumes
 # are used and there is nothing to prepare.
+#
+# The conditions test the length explicitly rather than the bare string.
+# A parameter arriving as an extra-var is AnsibleUnsafeText, and from
+# ansible-core 2.18 a conditional that is not a real boolean is interpreted
+# as False with only a deprecation warning — so "when: omero_data_path"
+# silently skipped these tasks on SRC even with the path set, leaving the
+# bind-mount directories uncreated and owned by root.
 - name: Create the OMERO data base directory
   ansible.builtin.file:
     path: "{{ omero_data_path }}"
@@ -8,7 +15,7 @@
     owner: root
     group: root
     mode: "0755"
-  when: omero_data_path
+  when: omero_data_path | length > 0
 
 # PostgreSQL refuses to start unless PGDATA is u=rwx or u=rwx,g=rx, and the
 # postgres entrypoint chmods it to 0700 on every start. Creating it as 0700
@@ -21,7 +28,7 @@
     owner: "999"
     group: "999"
     mode: "0700"
-  when: omero_data_path
+  when: omero_data_path | length > 0
 
 - name: Create the OMERO data directory (container uid 1000)
   ansible.builtin.file:
@@ -30,4 +37,4 @@
     owner: "1000"
     group: "1000"
     mode: "0755"
-  when: omero_data_path
+  when: omero_data_path | length > 0

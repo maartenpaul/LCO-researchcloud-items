@@ -25,5 +25,30 @@
   when: not (omero_direct_access | bool)
   notify: Reload nginx
 
+# Check the merged configuration here rather than leaving it to the reload
+# handler. A failing "systemctl reload nginx" only reports "Job for
+# nginx.service failed", which says nothing about the cause; "nginx -t" names
+# the file and line. The most common cause is another component owning
+# "location /" on the same server — SURF's Demo Web Apps component serves a
+# static site from it, which collides with the OMERO location block.
+- name: Validate the merged nginx configuration
+  ansible.builtin.command: nginx -t
+  register: omero_nginx_test
+  changed_when: false
+  failed_when: false
+
+- name: Fail with the nginx error when the configuration is invalid
+  ansible.builtin.fail:
+    msg: |-
+      The nginx configuration is invalid after adding the OMERO config, so
+      nginx was left running with its previous configuration.
+
+      {{ omero_nginx_test.stderr | default(omero_nginx_test.stdout, true) }}
+
+      A "duplicate location" error means another component already defines
+      "location /" on the workspace server. Remove that component from the
+      catalog item — SURF's Demo Web Apps component does this.
+  when: omero_nginx_test.rc != 0
+
 # Ports 4063/4064 (and omero_direct_port) are opened in the workspace security
 # group through the SRC dashboard, not from this component.
