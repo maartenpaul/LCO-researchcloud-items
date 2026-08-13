@@ -54,6 +54,18 @@ omero_postgres_tag: >-
 # Internal defaults — normally not changed.
 omero_web_port: 4080
 omero_project_dir: /opt/omero
+
+# OMERO.figure exports figures as PDF or TIFF through a server-side script that
+# ships with the omero-figure package but is not installed into OMERO.server by
+# it, so a stock server answers the export with "Figure_To_Pdf.py not found".
+# Keep the version in step with the omero-figure in the omero-web image
+# (omero-web-standalone:5 currently carries 7.4.1); the script and the plugin
+# exchange a figure JSON whose fields move between releases.
+omero_figure_version: 7.4.1
+omero_figure_script: "{{ omero_project_dir }}/Figure_To_Pdf.py"
+omero_figure_script_url: >-
+  https://raw.githubusercontent.com/ome/omero-figure/v{{ omero_figure_version
+  }}/omero_figure/scripts/omero/figure_scripts/Figure_To_Pdf.py
 omero_nginx_location_conf: /etc/nginx/app-location-conf.d/omero.conf
 omero_nginx_direct_conf: /etc/nginx/conf.d/omero-direct.conf
 
