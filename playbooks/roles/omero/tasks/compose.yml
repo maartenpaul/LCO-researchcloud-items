@@ -72,6 +72,32 @@
     mode: "0600"
   when: omero_root_password_generated | default(false)
 
+# Bind-mounted into the server container rather than baked into an image, so
+# the stock openmicroscopy/omero-server image can still be used as-is. That
+# image already provides the reportlab, Markdown and Pillow the script imports,
+# so nothing has to be installed alongside it.
+- name: Install the OMERO.figure PDF export script
+  ansible.builtin.get_url:
+    url: "{{ omero_figure_script_url }}"
+    dest: "{{ omero_figure_script }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: omero_figure_script_download
+
+# Docker binds a single-file mount to the inode the file had when the container
+# started, and get_url replaces the file rather than rewriting it. A container
+# that is already up therefore keeps serving the old script, so note here
+# whether one exists before the compose run below either creates it (mount
+# already current) or leaves it running (mount now stale).
+- name: Check whether an OMERO.server container already exists
+  ansible.builtin.command: "{{ omero_compose_cmd }} ps -q omeroserver"
+  register: omero_server_existing
+  changed_when: false
+  failed_when: false
+  args:
+    chdir: "{{ omero_project_dir }}"
+
 - name: Deploy the docker-compose file
   ansible.builtin.template:
     src: docker-compose.yml.j2
@@ -95,6 +121,17 @@
   failed_when: omero_compose_up.rc != 0
   args:
     chdir: "{{ omero_project_dir }}"
+
+- name: Recreate OMERO.server when the export script changed under it
+  ansible.builtin.command: "{{ omero_compose_cmd }} up -d --force-recreate omeroserver"
+  register: omero_server_recreate
+  changed_when: true
+  failed_when: omero_server_recreate.rc != 0
+  args:
+    chdir: "{{ omero_project_dir }}"
+  when:
+    - omero_figure_script_download is changed
+    - omero_server_existing.stdout | trim | length > 0
 
 - name: Wait for OMERO.web to respond (first start initializes the database)
   ansible.builtin.uri:

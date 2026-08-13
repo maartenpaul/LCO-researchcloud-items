@@ -38,6 +38,10 @@ services:
       - "4064:4064"
     volumes:
       - "{{ omero_server_volume }}:/OMERO"
+      # OMERO.figure's PDF/TIFF export script, which the server image does not
+      # ship. Mounted as a single file so the other scripts in that directory
+      # keep coming from the image.
+      - "{{ omero_figure_script }}:/opt/omero/server/OMERO.server/lib/scripts/omero/figure_scripts/Figure_To_Pdf.py:ro"
     depends_on:
       - database
     ulimits:

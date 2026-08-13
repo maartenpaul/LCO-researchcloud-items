@@ -8,9 +8,10 @@ Deploys [OMERO.server](https://www.openmicroscopy.org/omero/) and OMERO.web on a
 
 1. Verifies prerequisites: Docker with Compose, and SURF's nginx component
 2. Optionally prepares bind-mounted data directories (`OMERO_DATA_PATH`)
-3. Deploys `/opt/omero/docker-compose.yml` and starts the stack (`restart: unless-stopped`, so it also comes back after a reboot)
-4. Waits for OMERO.web to answer on `127.0.0.1:4080`
-5. Configures nginx:
+3. Installs OMERO.figure's `Figure_To_Pdf.py` export script, which OMERO.server does not ship
+4. Deploys `/opt/omero/docker-compose.yml` and starts the stack (`restart: unless-stopped`, so it also comes back after a reboot)
+5. Waits for OMERO.web to answer on `127.0.0.1:4080`
+6. Configures nginx:
    - `/etc/nginx/app-location-conf.d/omero.conf` — OMERO at the root of the workspace URL (port 443), with SRAM authentication unless disabled
    - `/etc/nginx/conf.d/omero-direct.conf` — optional extra HTTPS endpoint on `OMERO_DIRECT_PORT` without SRAM authentication
 
@@ -106,7 +107,7 @@ The equivalent environment variables also work (`sudo env OMERO_DATA_PATH=… an
 | `tasks/main.yml` | Facts, OS check, then the phase files below |
 | `tasks/prereqs.yml` | Docker/Compose/nginx/cert checks, compose command detection |
 | `tasks/storage.yml` | Bind-mount directories with container uids |
-| `tasks/compose.yml` | Compose project deploy, pull, up, readiness wait; generates credentials file when no password is set |
+| `tasks/compose.yml` | Compose project deploy, pull, up, readiness wait; generates credentials file when no password is set; installs the OMERO.figure export script |
 | `tasks/nginx.yml` | Location block, direct server block |
 | `templates/docker-compose.yml.j2` | The compose stack (adapted from docker-example-omero) |
 | `templates/omero-location.conf.j2` | Port-443 location block (SRAM auth optional) |
@@ -135,6 +136,16 @@ sudo docker exec omero-omeroweb-1 \
 ```
 
 If the workspace URL is missing, `omero_workspace_fqdn` was resolved wrong — verify the FQDN and re-run the component. Reaching OMERO under a name the role does not know about (a CNAME, say) needs `OMERO_EXTRA_CSRF_ORIGINS`.
+
+**OMERO.figure export fails.** The PDF/TIFF export runs `Figure_To_Pdf.py` inside OMERO.server; the role downloads it to `/opt/omero/Figure_To_Pdf.py` and bind-mounts it into the container. Verify both ends:
+
+```bash
+ls -l /opt/omero/Figure_To_Pdf.py
+sudo docker exec omero-omeroserver-1 \
+  head -3 /opt/omero/server/OMERO.server/lib/scripts/omero/figure_scripts/Figure_To_Pdf.py
+```
+
+A single-file bind mount follows the inode the file had when the container started, so replacing the script by hand does not reach a running container — `docker compose -f /opt/omero/docker-compose.yml up -d --force-recreate omeroserver` afterwards. Keep `omero_figure_version` in step with the omero-figure inside the web container (`sudo docker exec omero-omeroweb-1 ls /opt/omero/web/venv3/lib/python*/site-packages | grep omero_figure`).
 
 **Bind mount permission errors.** `postgres` needs uid 999 on `<path>/postgres`, `omero-server` needs uid 1000 on `<path>/omero`. The role sets this at deploy time; if you moved data manually: `sudo chown -R 999:999 <path>/postgres && sudo chown -R 1000:1000 <path>/omero`.
 
