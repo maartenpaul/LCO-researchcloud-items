@@ -78,8 +78,17 @@ cmd_fork() {
     # Copy only the manifest and lock file — never the shared .pixi/ directory.
     # pixi rebuilds the environment from the lock, hardlinking from the shared
     # cache, so the packages are not duplicated on disk.
-    cp -n "${SHARED_DIR}/${tool}/pixi.toml" "${dest}/"
-    [ -f "${SHARED_DIR}/${tool}/pixi.lock" ] && cp -n "${SHARED_DIR}/${tool}/pixi.lock" "${dest}/"
+    #
+    # An existing file is left alone: a previous fork attempt may have been
+    # interrupted after the user already edited the manifest. Testing for the
+    # file beats `cp -n`, which warns that its behaviour is non-portable on
+    # current coreutils. The lock file is optional, and under `set -e` a bare
+    # `[ -f ... ] && cp ...` would abort the whole fork for a tool that has none.
+    for manifest_file in pixi.toml pixi.lock; do
+        if [ -f "${SHARED_DIR}/${tool}/${manifest_file}" ] && [ ! -f "${dest}/${manifest_file}" ]; then
+            cp "${SHARED_DIR}/${tool}/${manifest_file}" "${dest}/"
+        fi
+    done
 
     echo "Installing (reusing the shared package cache — this should be quick)..."
     "${PIXI_BIN}" install --manifest-path "${dest}/pixi.toml"

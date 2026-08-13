@@ -1,7 +1,15 @@
 ---
+# ansible-galaxy lives next to the interpreter running this playbook, inside
+# SRC's own venv. Calling it by bare name relies on that venv's bin being on
+# PATH, which it is not whenever the playbook is started through sudo — sudo
+# resets PATH to secure_path and the task fails with "No such file or
+# directory: b'ansible-galaxy'". Deriving the path from the interpreter works
+# in both cases.
 - name: Install uusrc.general Ansible collection
   ansible.builtin.command:
-    cmd: ansible-galaxy collection install -r {{ playbook_dir }}/requirements.yml --force
+    cmd: >-
+      {{ ansible_playbook_python | dirname }}/ansible-galaxy
+      collection install -r {{ playbook_dir }}/requirements.yml --force
   register: pixi_ai_tools_galaxy_install
   changed_when: "'Installing' in pixi_ai_tools_galaxy_install.stdout"
 

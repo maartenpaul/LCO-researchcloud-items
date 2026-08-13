@@ -4,7 +4,10 @@
 # Installs Pixi and deploys AI/ML tool environments for bioimage analysis.
 # All logic lives in roles/pixi_ai_tools; see its README for details.
 #
-# SRC Parameters (set as environment variables or via the SRC portal):
+# SRC Parameters. Declared in the component wizard; SRC passes each one to this
+# playbook as an Ansible variable named after its key. The role also accepts the
+# same names as environment variables, which is only meant for testing outside
+# SRC.
 #   PIXI_AI_TOOLS_VERSION  — Git branch/tag to clone (default: "master")
 #   PIXI_AI_TOOLS_PRELOAD  — Tools to pre-install, or "all" (default: "all")
 #

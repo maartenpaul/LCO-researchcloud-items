@@ -71,6 +71,8 @@ The shared cache is group-writable via a default ACL for the workspace group, so
 
 ## SRC Parameters
 
+Declare these in step 3 of the component wizard. SRC hands each parameter to the playbook as an **Ansible variable** named after its key — environment variables are the PowerShell/Windows mechanism, not the Ansible one. The role reads the variable first and falls back to an environment variable of the same name, which is only there so the playbook can be driven from a shell when testing outside SRC.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `PIXI_AI_TOOLS_VERSION` | `master` | Git branch or tag of AI_tools_pixi to deploy |
@@ -104,8 +106,10 @@ Disk: size the VM for the shared install (~50 GB for all eight environments) plu
 ```bash
 ansible-galaxy collection install -r playbooks/requirements.yml
 sudo ansible-playbook playbooks/pixi-ai-tools.yml                                   # preloads everything
-sudo env PIXI_AI_TOOLS_PRELOAD=cellpose,stardist ansible-playbook playbooks/pixi-ai-tools.yml
+sudo ansible-playbook playbooks/pixi-ai-tools.yml -e PIXI_AI_TOOLS_PRELOAD=cellpose,stardist
 ```
+
+Passing parameters as extra-vars exercises the same code path SRC uses. Note that `-e key=value` splits on whitespace, so a value containing spaces needs the JSON form — `-e '{"PIXI_AI_TOOLS_PRELOAD": "cellpose, stardist"}'` — which is also how SRC passes them. The equivalent environment variables still work, but testing only that way will not catch a parameter the playbook fails to read as a variable.
 
 ## Available environments
 

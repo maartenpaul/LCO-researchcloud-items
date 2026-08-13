@@ -111,6 +111,24 @@ DESKTOP_GUI
     fi
 done
 
+# Launchers written by an earlier deploy survive in the user's home directory
+# even after the workspace is redeployed with a narrower PIXI_AI_TOOLS_PRELOAD.
+# The loop above only creates launchers for environments that are built, but it
+# never removes the ones that are now stale — and a stale launcher does not just
+# do nothing, it fails: `pixi run` on an unbuilt environment tries to create
+# .pixi/ inside the read-only shared checkout and dies with "Permission denied".
+# Drop any launcher whose environment is not built.
+for stale_desktop in "${DESKTOP_DIR}"/pixi-*.desktop "${HOME}"/Desktop/pixi-*.desktop; do
+    [ -f "${stale_desktop}" ] || continue
+    stale_tool=$(basename "${stale_desktop}" .desktop)
+    stale_tool=${stale_tool#pixi-}
+    stale_tool=${stale_tool%-terminal}
+    if [ ! -d "${SHARED_DIR}/${stale_tool}/.pixi/envs/default" ]; then
+        echo "Removing launcher for environment that is not installed: ${stale_tool}"
+        rm -f "${stale_desktop}"
+    fi
+done
+
 # Desktop environments that enforce the executable bit (GNOME, some XFCE
 # configs) refuse to launch a .desktop file that is not marked +x. The
 # heredocs above create them 0644, so mark them executable here.
