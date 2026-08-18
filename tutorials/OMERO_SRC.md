@@ -9,6 +9,7 @@ Image data and the OMERO database are ideally stored on permanent storage. In SR
 Go to the storage tab, click `+` follow the steps, make sure to select the correct organization and the choose the amount of storage you like to have.
 
 Choose a name for the storage, note this name as we will need it for automatically installation of OMERO.
+
 ![[image1.png]]
 
 ## 2. Create new workspace
