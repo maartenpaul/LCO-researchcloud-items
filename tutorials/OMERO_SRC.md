@@ -10,7 +10,7 @@ Go to the storage tab, click `+` follow the steps, make sure to select the corre
 
 Choose a name for the storage, note this name as we will need it for automatically installation of OMERO.
 
-![[image1.png]]
+![image1](image1.png)
 
 ## 2. Create new workspace
 
@@ -23,7 +23,7 @@ You need to select a catalog item
 - choose a configuration: e.g. 8 core 32gb
 - Make sure to select Ubuntu 22.04 (there is an issue with the docker component on 24.04)
 
-![[image2.png]]
+![image2](image2.png)
 
 - In the next step make sure to select the storage you create before
 - optional: if you like to connect multiple VMs together you can connect to a private network (you need to create first)
@@ -36,7 +36,8 @@ You need to select a catalog item
 - SRAM login, before logging into OMERO need to enter SRAM credentials so need to be part of the organization to access OMERO, still need a separate account for OMERO
 - OMERO root password: provide a initial password otherwise a random generated password is used. Than can be accessed via SSH
 - Press submit: the virtual machine is build and after a while will be accessible
-- To access OMERO.web need to open port 80 (TCP), which redirects to nginx![[image3.png]]
+- To access OMERO.web need to open port 80 (TCP), which redirects to nginx
+![image3](image3.png)
 
 For access to the OMERO API also need to open (4063-4064, tcp)
 
