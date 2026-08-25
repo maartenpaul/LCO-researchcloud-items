@@ -16,7 +16,7 @@
 /venv-server/bin/fractalctl init-db-data \
     --resource resource.json --profile profile.json \
     --admin-email {{ fractal_admin_email }} --admin-pwd '{{ fractal_admin_password }}' \
-    --admin-project-dir /data/zarrs/test01
+    --admin-project-dir {{ fractal_admin_project_dir }}
 
 /venv-server/bin/gunicorn fractal_server.main:app \
     --workers 2 \

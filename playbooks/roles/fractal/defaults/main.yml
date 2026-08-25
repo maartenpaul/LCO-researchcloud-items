@@ -108,6 +108,24 @@ fractal_secrets:
   - name: jwt_secret
     length: 48
 
+# The admin user's project directory, seeded by "fractalctl init-db-data".
+# Since fractal-server 2.24 a user's project_dirs are also their viewer paths:
+# fractal-data asks the server which paths a user may read, and refuses
+# anything outside them with a 403. Upstream's example uses /data/zarrs/test01,
+# which does not contain the demo plate the bootstrap downloads to
+# /data/zarrs/<plate>, so the viewer would show nothing. Only applied while
+# initialising a fresh database.
+fractal_admin_project_dir: /data/zarrs
+
+# uid/gid the database image runs as, used to create PGDATA on the bind mount.
+# Upstream's compose file uses postgres:*-alpine, whose postgres user is uid
+# 70; the Debian-based postgres images use 999 instead. Getting this wrong is
+# not obvious from the outside: initdb still populates the directory (the
+# entrypoint chowns the *contents*), but the directory itself stays
+# unreadable, and postgres fails later with "could not open file
+# global/pg_filenode.map: Permission denied".
+fractal_postgres_uid: "70"
+
 # Ports the upstream compose file uses. Every service runs network_mode: host,
 # so these are host ports and nginx proxies to 127.0.0.1:<port>. filebrowser is
 # the exception: it publishes 8080:80.

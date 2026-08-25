@@ -11,13 +11,19 @@ exit 0
 # shellcheck disable=SC1091
 source ./venv-client/bin/activate
 
-# The demo workflow needs three packages: the CellVoyager converter and the
-# Cellpose task both moved out of fractal-tasks-core into their own packages.
+# The CellVoyager converter moved out of fractal-tasks-core into
+# fractal-uzh-converters, so the demo workflow needs both.
+#
+# The Cellpose tasks are deliberately absent: they moved into their own
+# repositories (fractal-cellpose-2-segmentation-task and -3-) which are not
+# published to PyPI, and "fractal task collect" installs from PyPI — collecting
+# them needs a wheel built from source. They would also pull torch onto a
+# workspace that has no GPU. Collect them by hand if you need them.
+#
 # Collection is not idempotent, so a second run reports "already collected".
 for pkg_spec in \
     "fractal-tasks-core --package-extras fractal-tasks" \
-    "fractal-uzh-converters" \
-    "fractal-cellpose-2-segmentation-task"
+    "fractal-uzh-converters"
 do
     # shellcheck disable=SC2086
     fractal task collect $pkg_spec \

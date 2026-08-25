@@ -33,6 +33,8 @@ services:
   web:
     restart: unless-stopped
     build:
+      # Derived from upstream's Dockerfile by tasks/source.yml; see there.
+      dockerfile: Dockerfile.src
       args:
         - FRACTAL_WEB_VERSION={{ fractal_web_version }}
     environment:
@@ -48,7 +50,11 @@ services:
       PUBLIC_FRACTAL_FEATURE_EXPLORER_URL: "https://{{ fractal_workspace_fqdn }}/explorer"
 
   server-config:
-    restart: unless-stopped
+    # NOT unless-stopped: this is a one-shot bootstrap container that exits 0
+    # when it is done, and a restart policy would make Docker run it again
+    # forever — re-collecting tasks and re-checking the Zenodo downloads on a
+    # loop.
+    restart: "no"
     build:
       args:
         - FRACTAL_CLIENT_VERSION={{ fractal_client_version }}

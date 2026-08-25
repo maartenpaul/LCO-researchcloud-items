@@ -70,8 +70,11 @@ echo "✓ no plain-http workspace URLs"
 # --- the bootstrap must collect the packages the demo tasks actually moved to
 grep_in "$D/bootstrap.sh" "fractal-tasks-core"
 grep_in "$D/bootstrap.sh" "fractal-uzh-converters"
-grep_in "$D/bootstrap.sh" "fractal-cellpose-2-segmentation-task"
 grep_in "$D/bootstrap.sh" "unzip -q -o"
+# The Cellpose packages are not on PyPI, so collecting them can only fail.
+if grep -qE '^[[:space:]]+"fractal-cellpose' "$D/bootstrap.sh"; then
+  fail "bootstrap tries to collect a Cellpose package that is not published to PyPI"
+fi
 echo "✓ bootstrap collects the moved packages and is re-runnable"
 
 # --- compose override: the parts that are logic
@@ -81,9 +84,11 @@ c = yaml.safe_load(open(sys.argv[1]))
 assert c["name"] == "fractal", c.get("name")
 svc = c["services"]
 # Upstream sets a restart policy only on db, so a reboot otherwise leaves
-# Fractal down permanently.
+# Fractal down permanently. server-config is the exception: it is a one-shot
+# bootstrap container that exits 0, and a restart policy loops it forever.
 for name, s in svc.items():
-    assert s.get("restart") == "unless-stopped", (name, s.get("restart"))
+    expected = "no" if name == "server-config" else "unless-stopped"
+    assert s.get("restart") == expected, (name, s.get("restart"))
 vols = c["volumes"]
 assert vols["data"]["driver_opts"]["device"] == "/opt/fractal/data", vols
 assert vols["postgres_db"]["driver_opts"]["device"] == "/opt/fractal/data/postgres", vols
