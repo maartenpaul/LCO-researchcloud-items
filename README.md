@@ -11,6 +11,7 @@ Each component is one **entry-point playbook** in `playbooks/` — the path regi
 | **Pixi AI Tools** — installs [Pixi](https://pixi.sh) and deploys the [AI_tools_pixi](https://github.com/Leiden-Cell-Observatory/AI_tools_pixi) bioimage analysis environments as one shared, root-owned install with system-wide Jupyter kernels | [`playbooks/pixi-ai-tools.yml`](playbooks/pixi-ai-tools.yml) | [roles/pixi_ai_tools](playbooks/roles/pixi_ai_tools/README.md) |
 | **QuPath** — installs [QuPath](https://qupath.github.io/) with preconfigured preferences and extensions | [`playbooks/qupath.yml`](playbooks/qupath.yml) | [roles/qupath](playbooks/roles/qupath/README.md) |
 | **OMERO** — deploys [OMERO.server + OMERO.web](https://github.com/ome/docker-example-omero) with Docker behind the SRC nginx proxy, with optional SRAM authentication or direct HTTPS access and optional bind-mounted data storage | [`playbooks/omero.yml`](playbooks/omero.yml) | [roles/omero](playbooks/roles/omero/README.md) |
+| **Fractal** — deploys the [Fractal analytics platform](https://fractal-analytics-platform.github.io/) (server, web client, Zarr streaming with vizarr, feature explorer, filebrowser and a containerised demo SLURM cluster) with Docker behind the SRC nginx proxy on a single HTTPS origin, with optional SRAM authentication and bind-mounted workspace storage | [`playbooks/fractal.yml`](playbooks/fractal.yml) | [roles/fractal](playbooks/roles/fractal/README.md) |
 
 ## Repository layout
 
@@ -32,15 +33,30 @@ playbooks/
     │   ├── tasks/main.yml
     │   ├── templates/           # .desktop launcher
     │   └── files/               # groovy script + preferences
-    └── omero/
+    ├── omero/
+    │   ├── README.md
+    │   ├── defaults/main.yml    # SRC parameters + paths
+    │   ├── handlers/main.yml    # nginx reload
+    │   ├── tasks/               # main.yml + one file per phase
+    │   └── templates/           # compose file + nginx configs
+    └── fractal/
         ├── README.md
         ├── defaults/main.yml    # SRC parameters + paths
         ├── handlers/main.yml    # nginx reload
         ├── tasks/               # main.yml + one file per phase
-        └── templates/           # compose file + nginx configs
+        ├── templates/           # compose override, configs, nginx
+        └── tests/               # offline template render checks
 ```
 
 Roles live under `playbooks/roles/` because Ansible resolves that directory relative to the playbook itself — no `ansible.cfg` or `roles_path` needed, whatever working directory SRC runs from.
+
+## SRC parameter naming
+
+Components here read their SRC parameters as uppercase names (`OMERO_*`,
+`FRACTAL_*`). SURF's and Utrecht's own components use lowercase `src_<app>_*`
+instead. The deviation is deliberate — it keeps the parameter name, the Ansible
+variable and the documentation identical — but it is worth knowing when comparing
+these roles against the SURF catalog.
 
 ## Adding a new component
 
