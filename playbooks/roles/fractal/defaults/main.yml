@@ -1,0 +1,6 @@
+---
+# Internal paths — normally not changed.
+fractal_project_dir: /opt/fractal
+fractal_src_dir: /opt/fractal/src
+fractal_conf_dir: /opt/fractal/conf
+fractal_compose_dir: /opt/fractal/src/examples/full-stack
