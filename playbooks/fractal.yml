@@ -38,7 +38,7 @@
 - name: Deploy Fractal
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true
   become: true
   roles:
     - fractal

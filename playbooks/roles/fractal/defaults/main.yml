@@ -1,6 +1,130 @@
 ---
+# SRC parameters. A component parameter reaches an Ansible playbook as a
+# variable named after its key — not as an environment variable, which is the
+# PowerShell/Windows mechanism. Reading these with lookup('env', ...) alone
+# would silently ignore everything set in the portal and always use the
+# defaults below. The env lookup is kept only as a fallback so the role can be
+# driven from a shell when testing outside SRC.
+
+# Base path for Fractal's data (zarrs, images, task venvs, job artifacts) and
+# for PostgreSQL's data directory. SRC mounts attached storage at
+# /data/<storage-name>, so mark this parameter Required in the component and
+# SRC will ask the workspace-user for it at creation time. The default is a
+# real path rather than an empty string: everything below is then one code
+# path, with no "is it set?" branch anywhere.
+fractal_data_path: >-
+  {{ FRACTAL_DATA_PATH | default(lookup('env', 'FRACTAL_DATA_PATH'), true)
+     | default('/opt/fractal/data', true) }}
+
+# Bootstrapped Fractal admin account. The password is only consumed by
+# "fractalctl init-db-data" while initialising a fresh database, so it stays
+# stable on redeploys. Empty → a random password is generated at deploy time
+# and stored in /opt/fractal/credentials (read with sudo).
+fractal_admin_email: >-
+  {{ FRACTAL_ADMIN_EMAIL | default(lookup('env', 'FRACTAL_ADMIN_EMAIL'), true)
+     | default('admin@example.org', true) }}
+fractal_admin_password: >-
+  {{ FRACTAL_ADMIN_PASSWORD | default(lookup('env', 'FRACTAL_ADMIN_PASSWORD'), true)
+     | default('', true) }}
+
+# When true, the workspace URL requires an SRAM login before traffic reaches
+# fractal-web. This only gates access to the page: Fractal keeps its own
+# accounts, and everyone who passes the gate shares the admin account above.
+fractal_require_sram_auth: >-
+  {{ FRACTAL_REQUIRE_SRAM_AUTH | default(lookup('env', 'FRACTAL_REQUIRE_SRAM_AUTH'), true)
+     | default('true', true) }}
+
+# When true, the bootstrap container collects the demo task packages and
+# downloads the Zenodo example datasets (several GB) on first boot.
+fractal_demo_data: >-
+  {{ FRACTAL_DEMO_DATA | default(lookup('env', 'FRACTAL_DEMO_DATA'), true)
+     | default('true', true) }}
+
+# Component releases, verified working together.
+fractal_server_version: >-
+  {{ FRACTAL_SERVER_VERSION | default(lookup('env', 'FRACTAL_SERVER_VERSION'), true)
+     | default('2.24.2', true) }}
+fractal_web_version: >-
+  {{ FRACTAL_WEB_VERSION | default(lookup('env', 'FRACTAL_WEB_VERSION'), true)
+     | default('1.29.6', true) }}
+fractal_client_version: >-
+  {{ FRACTAL_CLIENT_VERSION | default(lookup('env', 'FRACTAL_CLIENT_VERSION'), true)
+     | default('2.23.1', true) }}
+fractal_feature_explorer_version: >-
+  {{ FRACTAL_FEATURE_EXPLORER_VERSION | default(lookup('env', 'FRACTAL_FEATURE_EXPLORER_VERSION'), true)
+     | default('0.1.18', true) }}
+
+# Upstream commit to deploy. NOT an SRC parameter: the templated run_server.sh
+# and bootstrap.sh, and the NODE_MAJOR_VERSION patch, all target this specific
+# tree, so letting a workspace-user retarget it from the portal would
+# desynchronise them silently. Upstream publishes no git tags.
+fractal_containers_ref: f417ef05d750201700164aedfad16852ce5ec328
+fractal_repo_url: https://github.com/fractal-analytics-platform/fractal-containers
+
+# fractal-web publishes one release asset per Node major version and dropped
+# the node-20 asset at v1.29.0, while the example's Dockerfile still pins
+# ENV NODE_MAJOR_VERSION=20 — a build-time value with no ARG. tasks/source.yml
+# patches that one line in the clone rather than templating the whole file,
+# which would discard upstream edits at the next pin bump.
+fractal_node_major: "24"
+
 # Internal paths — normally not changed.
 fractal_project_dir: /opt/fractal
 fractal_src_dir: /opt/fractal/src
 fractal_conf_dir: /opt/fractal/conf
 fractal_compose_dir: /opt/fractal/src/examples/full-stack
+fractal_compose_project: fractal
+fractal_nginx_snippet: /etc/nginx/snippets/fractal-proxy.conf
+fractal_nginx_location_conf: /etc/nginx/app-location-conf.d/fractal.conf
+
+# Files bind-mounted over their in-image paths, because the values in them are
+# baked in at build time and a compose override cannot reach them. "service" is
+# the compose service that mounts the file: only that container is recreated
+# when the file changes. The offline harness in tests/ loops over this same
+# list, so it exists in exactly one place.
+fractal_conf_templates:
+  - src: run_server.sh.j2
+    dest: run_server.sh
+    mode: "0755"
+    service: slurm
+  - src: fractal_server.env.j2
+    dest: fractal_server.env
+    mode: "0640"
+    service: slurm
+  - src: feature-explorer-config.toml.j2
+    dest: feature-explorer-config.toml
+    mode: "0644"
+    service: fractal-feature-explorer
+  - src: bootstrap.sh.j2
+    dest: bootstrap.sh
+    mode: "0755"
+    service: server-config
+
+# Secrets generated once and reused on later runs. A regenerated JWT secret
+# would invalidate every session and every issued token.
+fractal_secrets:
+  - name: admin_password
+    length: 20
+  - name: jwt_secret
+    length: 48
+
+# Ports the upstream compose file uses. Every service runs network_mode: host,
+# so these are host ports and nginx proxies to 127.0.0.1:<port>. filebrowser is
+# the exception: it publishes 8080:80.
+fractal_server_port: 8000
+fractal_web_port: 5173
+fractal_data_port: 3000
+fractal_explorer_port: 8501
+fractal_filebrowser_port: 8080
+
+# SRC provides workspace_fqdn as an extra var at component runtime; fall back
+# to the env var, then to the host FQDN (which is correct on SRC workspaces).
+fractal_workspace_fqdn: "{{ workspace_fqdn | default(lookup('env', 'WORKSPACE_FQDN')) | default(ansible_fqdn, true) }}"
+
+# SLURM node sizing is derived, never a parameter. A SLURM_CPUS higher than the
+# VM's real CPU count makes slurmd self-drain the node ("Low
+# socket*core*thread count") and every job pends forever — the exact failure
+# seen on the first workspace. Memory is capped at 60% of RAM so the rest of
+# the stack still fits.
+fractal_slurm_cpus: "{{ [ansible_processor_vcpus | default(2) | int, 1] | max }}"
+fractal_slurm_memory: "{{ ((ansible_memtotal_mb | default(4096) | int) * 0.6) | round | int }}"

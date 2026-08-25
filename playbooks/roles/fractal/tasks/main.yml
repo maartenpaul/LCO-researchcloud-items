@@ -1,7 +1,15 @@
 ---
-- name: Wait for system to become reachable
-  ansible.builtin.wait_for_connection:
-    timeout: 300
+- name: Check prerequisites (Docker, Compose, git, SRC nginx)
+  ansible.builtin.import_tasks: prereqs.yml
 
-- name: Gather facts
-  ansible.builtin.setup:
+- name: Fetch and patch the pinned fractal-containers source
+  ansible.builtin.import_tasks: source.yml
+
+- name: Render the Fractal configuration
+  ansible.builtin.import_tasks: config.yml
+
+- name: Deploy the Fractal Docker Compose stack
+  ansible.builtin.import_tasks: compose.yml
+
+- name: Configure nginx access
+  ansible.builtin.import_tasks: nginx.yml
