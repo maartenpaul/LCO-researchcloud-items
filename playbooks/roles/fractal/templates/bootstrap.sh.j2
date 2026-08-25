@@ -39,6 +39,26 @@ if [ ! -d 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr ]; then
     rm -rf 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr.zip __MACOSX
 fi
 
+# The Zenodo plate predates ngio's strict metadata validation: its wells and
+# images declare "version": "0.4", but the plate group itself has no version
+# key at all. Vizarr does not care, but anything built on ngio does —
+# napari-ome-zarr-navigator's Plate Browser refuses the plate with
+# "Input should be '0.4' or '0.5' ... input_value=None". Add the missing key.
+PLATE=/data/zarrs/20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr/.zattrs
+if [ -f "$PLATE" ]; then
+    python3 - "$PLATE" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as fh:
+    meta = json.load(fh)
+if "plate" in meta and "version" not in meta["plate"]:
+    meta["plate"]["version"] = "0.4"
+    with open(path, "w") as fh:
+        json.dump(meta, fh, indent=4)
+    print("added plate.version=0.4 to the demo plate")
+PYEOF
+fi
+
 # Demo image data
 mkdir -p /data/images/10.5281_zenodo.8287221
 cd /data/images/10.5281_zenodo.8287221 || exit 1

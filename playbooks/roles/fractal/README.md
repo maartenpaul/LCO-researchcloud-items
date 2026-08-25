@@ -115,8 +115,16 @@ The Cellpose tasks are **not** collected. They live in their own repositories
 They would also pull torch onto a workspace with no GPU. Collect them by hand from a
 wheel if you need them.
 
+The bootstrap also adds a missing `version` key to the demo plate's metadata. The
+Zenodo artifact predates ngio's strict validation: its wells and images declare
+`"version": "0.4"` but the plate group declares none. Vizarr does not care, but
+every ngio-based tool does — `napari-ome-zarr-navigator`'s Plate Browser rejects the
+plate with `Input should be '0.4' or '0.5' ... input_value=None`. Plates produced by
+Fractal's own converters are unaffected.
+
 A redeploy restarts the bootstrap container, which re-runs the script. That is safe
-— it skips downloads whose target exists and tolerates already-collected packages.
+— it skips downloads whose target exists, tolerates already-collected packages, and
+only rewrites the plate metadata when the key is genuinely absent.
 
 ## First boot answers 502
 
@@ -143,6 +151,25 @@ sudo docker exec fractal-db psql -U fractal -p 5433 -d fractal \
 # then, as admin, POST /admin/v2/task-group/<id>/delete/ and re-run the bootstrap:
 sudo docker compose up -d --force-recreate server-config
 ```
+
+## Opening the data from a laptop
+
+`/data` is deliberately **not** SRAM-gated — fractal-data performs its own token
+check — so remote tools can reach it with a fractal-server bearer token, which they
+could not do through an SRAM redirect.
+
+- **vizarr**: `https://<workspace>/data/vizarr/?source=https://<workspace>/data/files<absolute-path-to>.zarr`
+  (needs a fractal-web login in the same browser, for the cookie).
+- **napari**: install
+  [`napari-ome-zarr-navigator`](https://github.com/fractal-napari-plugins-collection/napari-ome-zarr-navigator),
+  open its Plate Browser, switch the source to HTTP and give it the same
+  `/data/files/...` URL plus a token from the fractal-web profile page. Use the
+  multi-resolution (lazy) mode for remote data. Remote stores are read-only from the
+  plugin, so annotations and labels have to be saved to a local folder.
+
+Note the doubled path segment: fractal-data serves `/data/files` + the absolute
+path inside the container, so a plate at `/data/zarrs/x.zarr` is
+`/data/files/data/zarrs/x.zarr`.
 
 ## Troubleshooting
 

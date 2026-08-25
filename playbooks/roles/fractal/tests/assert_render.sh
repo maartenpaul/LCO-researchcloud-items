@@ -71,6 +71,9 @@ echo "✓ no plain-http workspace URLs"
 grep_in "$D/bootstrap.sh" "fractal-tasks-core"
 grep_in "$D/bootstrap.sh" "fractal-uzh-converters"
 grep_in "$D/bootstrap.sh" "unzip -q -o"
+# The Zenodo plate is missing plate.version, which every ngio-based tool
+# (including the napari Plate Browser) rejects.
+grep_in "$D/bootstrap.sh" "plate.version=0.4"
 # The Cellpose packages are not on PyPI, so collecting them can only fail.
 if grep -qE '^[[:space:]]+"fractal-cellpose' "$D/bootstrap.sh"; then
   fail "bootstrap tries to collect a Cellpose package that is not published to PyPI"
