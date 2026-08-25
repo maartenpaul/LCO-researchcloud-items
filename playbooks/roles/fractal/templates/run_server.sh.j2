@@ -1,0 +1,28 @@
+#!/bin/bash
+# Managed by the fractal SRC component — bind-mounted over /run_server.sh.
+# Templated because the admin credentials are baked into the init-db-data call
+# below, which no compose override can reach.
+
+# Note: init-db-data fails if it runs a second time, which is exactly what
+# happens on every redeploy. Upstream leaves "set -eu" commented out for that
+# reason; keep it that way or redeploys abort before gunicorn starts.
+# set -eu
+
+# Activate SLURM, by running the entrypoint of the base image
+/etc/slurm/docker-entrypoint.sh
+
+/venv-server/bin/fractalctl set-db
+
+/venv-server/bin/fractalctl init-db-data \
+    --resource resource.json --profile profile.json \
+    --admin-email {{ fractal_admin_email }} --admin-pwd '{{ fractal_admin_password }}' \
+    --admin-project-dir /data/zarrs/test01
+
+/venv-server/bin/gunicorn fractal_server.main:app \
+    --workers 2 \
+    --timeout 20 \
+    --bind 0.0.0.0:{{ fractal_server_port }} \
+    --access-logfile - \
+    --error-logfile - \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --logger-class fractal_server.gunicorn_fractal.FractalGunicornLogger

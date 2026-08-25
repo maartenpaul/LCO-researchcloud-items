@@ -1,0 +1,71 @@
+---
+- name: Create the Fractal directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop:
+    - "{{ fractal_project_dir }}"
+    - "{{ fractal_conf_dir }}"
+
+# force: true discards local modifications inside the clone, which is what we
+# want: everything workspace-specific lives in /opt/fractal/conf and in the
+# compose override, never in the checkout. The NODE_MAJOR_VERSION patch below
+# is therefore re-applied on every run. No shallow clone — it could not be
+# re-checked-out at a different pinned commit later.
+- name: Clone or update fractal-containers at the pinned commit
+  ansible.builtin.git:
+    repo: "{{ fractal_repo_url }}"
+    dest: "{{ fractal_src_dir }}"
+    version: "{{ fractal_containers_ref }}"
+    force: true
+
+- name: Check that the pinned tree has the expected layout
+  ansible.builtin.stat:
+    path: "{{ fractal_compose_dir }}/docker-compose.yml"
+  register: fractal_compose_file
+
+- name: Report a bad pin clearly
+  ansible.builtin.fail:
+    msg: >-
+      {{ fractal_compose_dir }}/docker-compose.yml does not exist after
+      checking out {{ fractal_containers_ref }}. The pinned commit does not
+      have the expected layout.
+  when: not fractal_compose_file.stat.exists
+
+# One line, patched in place rather than templating the whole Dockerfile: a
+# templated copy would silently discard every upstream change to that file at
+# the next pin bump. fractal-web has published no node-20 release asset since
+# v1.29.0, so the stock value makes the image build fail with a 404.
+- name: Point the fractal-web build at a Node version that still has a release asset
+  ansible.builtin.replace:
+    path: "{{ fractal_compose_dir }}/web/Dockerfile"
+    regexp: '^ENV NODE_MAJOR_VERSION=.*$'
+    replace: "ENV NODE_MAJOR_VERSION={{ fractal_node_major }}"
+  register: fractal_web_patch
+
+- name: Create the Fractal data directories
+  ansible.builtin.file:
+    path: "{{ fractal_data_path }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0777"
+  loop:
+    - zarrs
+    - images
+    - app/Tasks
+    - app/Artifacts
+
+# The postgres entrypoint refuses to start unless PGDATA is u=rwx or u=rwx,g=rx
+# and chmods it to 0700 on every start, so create it that way — redeploys then
+# stay idempotent instead of repeatedly widening a live database directory.
+- name: Create the PostgreSQL data directory (container uid 999)
+  ansible.builtin.file:
+    path: "{{ fractal_data_path }}/postgres"
+    state: directory
+    owner: "999"
+    group: "999"
+    mode: "0700"

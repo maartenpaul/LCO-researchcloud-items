@@ -1,0 +1,48 @@
+#!/bin/bash
+# Managed by the fractal SRC component — bind-mounted over /config.sh.
+# Runs in the server-config container on every "docker compose up".
+set -u
+
+{% if not (fractal_demo_data | bool) %}
+echo "FRACTAL_DEMO_DATA is false — skipping task collection and demo downloads."
+exit 0
+{% endif %}
+
+# shellcheck disable=SC1091
+source ./venv-client/bin/activate
+
+# The demo workflow needs three packages: the CellVoyager converter and the
+# Cellpose task both moved out of fractal-tasks-core into their own packages.
+# Collection is not idempotent, so a second run reports "already collected".
+for pkg_spec in \
+    "fractal-tasks-core --package-extras fractal-tasks" \
+    "fractal-uzh-converters" \
+    "fractal-cellpose-2-segmentation-task"
+do
+    # shellcheck disable=SC2086
+    fractal task collect $pkg_spec \
+        || echo "task collection for '$pkg_spec' did not succeed (it may already exist)"
+done
+
+# Demo Zarr data
+mkdir -p /data/zarrs
+cd /data/zarrs/ || exit 1
+if [ ! -d 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr ]; then
+    wget --quiet https://zenodo.org/records/10424292/files/20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr.zip
+    unzip -q -o 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr.zip
+    rm -rf 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr.zip __MACOSX
+fi
+
+# Demo image data
+mkdir -p /data/images/10.5281_zenodo.8287221
+cd /data/images/10.5281_zenodo.8287221 || exit 1
+if [ -z "$(ls -A .)" ]; then
+    wget --quiet https://zenodo.org/api/records/8287221/files-archive
+    mv files-archive files-archive.zip
+    unzip -q -o files-archive.zip
+    rm -f files-archive.zip
+fi
+
+# SLURM jobs run as a different user than the one that did the downloads
+chmod 777 /data/images/ --recursive
+chmod 777 /data/zarrs/ --recursive

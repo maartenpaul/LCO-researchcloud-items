@@ -55,11 +55,14 @@ echo "✓ credentials templated"
 
 # --- no plain-http workspace URL may reach anything the browser reads
 for f in feature-explorer-config.toml docker-compose.override.yml; do
-  if grep -q "http://fractal\." "$D/$f"; then
+  # Ignore comment lines, which discuss http:// on purpose.
+  if grep -vE '^[[:space:]]*#' "$D/$f" | grep -q "http://fractal\."; then
     fail "$f contains a plain-http workspace URL"
   fi
 done
-if grep -q "allow_http" "$D/feature-explorer-config.toml"; then
+# Match an assignment, not the word: the template explains in a comment why
+# allow_http is absent.
+if grep -qE '^[[:space:]]*allow_http' "$D/feature-explorer-config.toml"; then
   fail "explorer config still sets allow_http"
 fi
 echo "✓ no plain-http workspace URLs"
@@ -93,9 +96,10 @@ PY
 
 # --- SRAM is a branch, so check both sides of it
 grep_in "$D/fractal.conf" "auth_request /validate;"
-# Dead headers must not come back: fractal-web ignores REMOTE_USER entirely.
-if grep -q "REMOTE_USER" "$D/fractal.conf"; then
-  fail "fractal.conf forwards REMOTE_USER, which fractal-web ignores"
+# Dead headers must not come back: fractal-web ignores them entirely. Match
+# the directive, not the word — the template explains their absence.
+if grep -qE '^[[:space:]]*proxy_set_header[[:space:]]+REMOTE_' "$D/fractal.conf"; then
+  fail "fractal.conf forwards REMOTE_USER/REMOTE_ROLES, which fractal-web ignores"
 fi
 render "$RENDER_ROOT/nosram" -e FRACTAL_REQUIRE_SRAM_AUTH=false
 if grep -q "auth_request /validate;" "$RENDER_ROOT/nosram/fractal.conf"; then

@@ -12,13 +12,18 @@
   gather_facts: true
   vars:
     render_dir: /tmp/fractal-render
-    fractal_admin_password: rendertestpassword
-    fractal_jwt_secret: rendertestsecret
-    fractal_workspace_fqdn: fractal.example.src.surf-hosted.nl
   tasks:
     - name: Load the role's defaults
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../defaults/main.yml"
+
+    # Set after include_vars, not as play vars: variables loaded by a task
+    # outrank play vars, so the defaults' empty password would win.
+    - name: Stand in for the values tasks/config.yml resolves at deploy time
+      ansible.builtin.set_fact:
+        fractal_admin_password: rendertestpassword
+        fractal_jwt_secret: rendertestsecret
+        fractal_workspace_fqdn: fractal.example.src.surf-hosted.nl
 
     - name: Ensure the render directory exists
       ansible.builtin.file:
