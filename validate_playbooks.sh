@@ -4,7 +4,7 @@
 set -e
 
 PLAYBOOK_DIR="$(dirname "$0")/playbooks"
-PLAYBOOKS=("qupath.yml" "pixi-ai-tools.yml" "omero.yml")
+PLAYBOOKS=("qupath.yml" "pixi-ai-tools.yml" "omero.yml" "fractal.yml")
 
 echo "=========================================="
 echo "Ansible Playbook Validation"

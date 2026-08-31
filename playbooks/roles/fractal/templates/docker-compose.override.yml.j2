@@ -1,0 +1,113 @@
+---
+# Managed by the fractal SRC component — regenerated on every run.
+#
+# Everything workspace-specific lives here or in the files bind-mounted below,
+# so the upstream checkout stays pristine and can be re-pinned.
+
+# Pinned so volume names are deterministic (fractal_data, fractal_postgres_db)
+# instead of being derived from the checkout's directory name.
+name: {{ fractal_compose_project }}
+
+services:
+
+  db:
+    restart: unless-stopped
+
+  slurm:
+    restart: unless-stopped
+    cpus: {{ fractal_slurm_cpus }}
+    build:
+      args:
+        - FRACTAL_SERVER_VERSION={{ fractal_server_version }}
+        # A SLURM_CPUS higher than the VM's real CPU count makes slurmd drain
+        # the node and every job pends forever, so this follows the facts.
+        - SLURM_CPUS={{ fractal_slurm_cpus }}
+        - SLURM_MEMORY={{ fractal_slurm_memory }}
+    volumes:
+      # Templated: the admin credentials are baked into the script.
+      - {{ fractal_conf_dir }}/run_server.sh:/run_server.sh:ro
+      # Templated: fractalctl reads this as a dotenv file, so it is not
+      # reliable whether "environment:" would win over it.
+      - {{ fractal_conf_dir }}/fractal_server.env:/.fractal_server.env:ro
+
+  web:
+    restart: unless-stopped
+    build:
+      # Derived from upstream's Dockerfile by tasks/source.yml; see there.
+      dockerfile: Dockerfile.src
+      args:
+        - FRACTAL_WEB_VERSION={{ fractal_web_version }}
+    environment:
+      # These are SvelteKit PUBLIC_* variables: they are compiled into the
+      # client bundle and fetched by the browser, so they must be the https
+      # workspace URL. A plain-http URL here is blocked as mixed content and
+      # vizarr silently renders nothing.
+      ORIGIN: "https://{{ fractal_workspace_fqdn }}"
+      AUTH_COOKIE_DOMAIN: "{{ fractal_workspace_fqdn }}"
+      AUTH_COOKIE_SECURE: "true"
+      PUBLIC_FRACTAL_DATA_URL: "https://{{ fractal_workspace_fqdn }}/data"
+      PUBLIC_FRACTAL_VIZARR_VIEWER_URL: "https://{{ fractal_workspace_fqdn }}/data/vizarr"
+      PUBLIC_FRACTAL_FEATURE_EXPLORER_URL: "https://{{ fractal_workspace_fqdn }}/explorer"
+
+  server-config:
+    # NOT unless-stopped: this is a one-shot bootstrap container that exits 0
+    # when it is done, and a restart policy would make Docker run it again
+    # forever — re-collecting tasks and re-checking the Zenodo downloads on a
+    # loop.
+    restart: "no"
+    build:
+      args:
+        - FRACTAL_CLIENT_VERSION={{ fractal_client_version }}
+    environment:
+      FRACTAL_USER: "{{ fractal_admin_email }}"
+      FRACTAL_PASSWORD: "{{ fractal_admin_password }}"
+    volumes:
+      - {{ fractal_conf_dir }}/bootstrap.sh:/config.sh:ro
+
+  fractal-data:
+    restart: unless-stopped
+
+  fractal-filebrowser:
+    restart: unless-stopped
+    environment:
+      # filebrowser is served under a sub-path and has to know its own prefix.
+      FB_BASEURL: "/files"
+
+  fractal-feature-explorer:
+    restart: unless-stopped
+    build:
+      args:
+        - FRACTAL_FEATURE_EXPLORER_VERSION={{ fractal_feature_explorer_version }}
+    environment:
+      # Streamlit has to know its prefix too, or every static asset and the
+      # websocket resolve to the wrong path behind the proxy.
+      STREAMLIT_SERVER_BASE_URL_PATH: "explorer"
+      STREAMLIT_BROWSER_SERVER_ADDRESS: "{{ fractal_workspace_fqdn }}"
+      STREAMLIT_SERVER_ENABLE_CORS: "false"
+    volumes:
+      - {{ fractal_conf_dir }}/feature-explorer-config.toml:/app/config.toml:ro
+    healthcheck:
+      # The image installs curl, not wget — upstream's wget check can only
+      # ever fail, which makes a healthy container report unhealthy.
+      test: curl -sf http://localhost:{{ fractal_explorer_port }}/explorer/_stcore/health > /dev/null 2>&1
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+# Both volumes follow FRACTAL_DATA_PATH. PGDATA lives there too: the workspace
+# storage is a filesystem on an attached block device, so fsync and locking
+# semantics are correct, and a rebuilt workspace that reattaches the volume
+# keeps projects, users and job history rather than only image files.
+volumes:
+  data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: {{ fractal_data_path }}
+  postgres_db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: {{ fractal_data_path }}/postgres

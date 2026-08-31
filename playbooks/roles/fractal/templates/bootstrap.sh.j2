@@ -1,0 +1,74 @@
+#!/bin/bash
+# Managed by the fractal SRC component — bind-mounted over /config.sh.
+# Runs in the server-config container on every "docker compose up".
+set -u
+
+{% if not (fractal_demo_data | bool) %}
+echo "FRACTAL_DEMO_DATA is false — skipping task collection and demo downloads."
+exit 0
+{% endif %}
+
+# shellcheck disable=SC1091
+source ./venv-client/bin/activate
+
+# The CellVoyager converter moved out of fractal-tasks-core into
+# fractal-uzh-converters, so the demo workflow needs both.
+#
+# The Cellpose tasks are deliberately absent: they moved into their own
+# repositories (fractal-cellpose-2-segmentation-task and -3-) which are not
+# published to PyPI, and "fractal task collect" installs from PyPI — collecting
+# them needs a wheel built from source. They would also pull torch onto a
+# workspace that has no GPU. Collect them by hand if you need them.
+#
+# Collection is not idempotent, so a second run reports "already collected".
+for pkg_spec in \
+    "fractal-tasks-core --package-extras fractal-tasks" \
+    "fractal-uzh-converters"
+do
+    # shellcheck disable=SC2086
+    fractal task collect $pkg_spec \
+        || echo "task collection for '$pkg_spec' did not succeed (it may already exist)"
+done
+
+# Demo Zarr data
+mkdir -p /data/zarrs
+cd /data/zarrs/ || exit 1
+if [ ! -d 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr ]; then
+    wget --quiet https://zenodo.org/records/10424292/files/20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr.zip
+    unzip -q -o 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr.zip
+    rm -rf 20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr.zip __MACOSX
+fi
+
+# The Zenodo plate predates ngio's strict metadata validation: its wells and
+# images declare "version": "0.4", but the plate group itself has no version
+# key at all. Vizarr does not care, but anything built on ngio does —
+# napari-ome-zarr-navigator's Plate Browser refuses the plate with
+# "Input should be '0.4' or '0.5' ... input_value=None". Add the missing key.
+PLATE=/data/zarrs/20200812-CardiomyocyteDifferentiation14-Cycle1_mip.zarr/.zattrs
+if [ -f "$PLATE" ]; then
+    python3 - "$PLATE" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as fh:
+    meta = json.load(fh)
+if "plate" in meta and "version" not in meta["plate"]:
+    meta["plate"]["version"] = "0.4"
+    with open(path, "w") as fh:
+        json.dump(meta, fh, indent=4)
+    print("added plate.version=0.4 to the demo plate")
+PYEOF
+fi
+
+# Demo image data
+mkdir -p /data/images/10.5281_zenodo.8287221
+cd /data/images/10.5281_zenodo.8287221 || exit 1
+if [ -z "$(ls -A .)" ]; then
+    wget --quiet https://zenodo.org/api/records/8287221/files-archive
+    mv files-archive files-archive.zip
+    unzip -q -o files-archive.zip
+    rm -f files-archive.zip
+fi
+
+# SLURM jobs run as a different user than the one that did the downloads
+chmod 777 /data/images/ --recursive
+chmod 777 /data/zarrs/ --recursive
