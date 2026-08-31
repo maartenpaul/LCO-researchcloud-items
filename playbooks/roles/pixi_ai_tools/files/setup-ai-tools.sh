@@ -70,18 +70,29 @@ fi
 DESKTOP_DIR="${HOME}/.local/share/applications"
 mkdir -p "${DESKTOP_DIR}"
 
+# Tools whose GUI is not napari. Everything else is decided by asking whether
+# the environment registers a napari plugin: a hand-written list went stale as
+# soon as the upstream repository changed, and it used to give stardist a napari
+# launcher even though nothing in that environment plugs into napari, so the
+# icon opened an empty viewer. ai-tools-has-gui is the same test the playbook
+# uses for the system-wide menu entries, so the two cannot disagree.
 declare -A GUI_COMMANDS
 GUI_COMMANDS[cellpose]="python -m cellpose"
-GUI_COMMANDS[stardist]="napari"
-GUI_COMMANDS[CAREamics]="napari"
-GUI_COMMANDS[micro_sam]="napari"
-GUI_COMMANDS[omero]="napari"
+
+HAS_GUI="/usr/local/bin/ai-tools-has-gui"
 
 for tool_dir in "${SHARED_DIR}"/*/; do
     [ -f "${tool_dir}pixi.toml" ] || continue
     # Only advertise environments that were actually pre-installed
     [ -d "${tool_dir}.pixi/envs/default" ] || continue
     tool_name=$(basename "${tool_dir}")
+
+    if [[ ! -v "GUI_COMMANDS[${tool_name}]" ]] && [ -x "${HAS_GUI}" ]; then
+        if plugins=$("${HAS_GUI}" "${tool_name}" "${SHARED_DIR}"); then
+            echo "${tool_name} provides napari plugin(s): ${plugins}"
+            GUI_COMMANDS[${tool_name}]="napari"
+        fi
+    fi
 
     cat > "${DESKTOP_DIR}/pixi-${tool_name}-terminal.desktop" << DESKTOP_TERM
 [Desktop Entry]
@@ -90,7 +101,7 @@ Name=${tool_name} (Pixi Terminal)
 Comment=Open a shell in the shared ${tool_name} environment
 Exec=bash -c "cd ${tool_dir} && ${PIXI_BIN} shell --frozen"
 Terminal=true
-Categories=Development;Science;
+Categories=Development;IDE;
 Icon=utilities-terminal
 StartupNotify=true
 DESKTOP_TERM
@@ -104,7 +115,7 @@ Name=${tool_name} (Pixi)
 Comment=Launch the ${tool_name} graphical interface
 Exec=${PIXI_BIN} run --frozen --manifest-path ${tool_dir}pixi.toml ${GUI_COMMANDS[${tool_name}]}
 Terminal=false
-Categories=Education;Science;
+Categories=Science;Biology;ImageProcessing;
 Icon=applications-science
 StartupNotify=true
 DESKTOP_GUI
@@ -126,6 +137,18 @@ for stale_desktop in "${DESKTOP_DIR}"/pixi-*.desktop "${HOME}"/Desktop/pixi-*.de
     if [ ! -d "${SHARED_DIR}/${stale_tool}/.pixi/envs/default" ]; then
         echo "Removing launcher for environment that is not installed: ${stale_tool}"
         rm -f "${stale_desktop}"
+        continue
+    fi
+    # A GUI launcher for a tool that no longer has a GUI. Earlier versions of
+    # this script gave every tool in a hand-written list a napari launcher,
+    # including environments with no napari plugin, so those icons opened an
+    # empty viewer. They survive in the user's home directory until removed.
+    case "${stale_desktop}" in
+        *-terminal.desktop) continue ;;
+    esac
+    if [[ ! -v "GUI_COMMANDS[${stale_tool}]" ]]; then
+        echo "Removing GUI launcher for a tool with no graphical interface: ${stale_tool}"
+        rm -f "${stale_desktop}"
     fi
 done
 
@@ -134,6 +157,29 @@ done
 # heredocs above create them 0644, so mark them executable here.
 chmod +x "${DESKTOP_DIR}"/pixi-*.desktop 2>/dev/null || true
 
+# The executable bit alone is not enough on XFCE 4.16 and later, which is what
+# SRC desktops run: xfdesktop and Thunar also want the launcher marked trusted,
+# and otherwise show "the file is not marked as trusted / do you want to launch
+# it" on every single click. Trust is per-user GIO metadata, so it cannot be set
+# by Ansible at deploy time — it belongs here, in the per-user runonce.
+#
+# XFCE stores the file's own SHA-256 under metadata::xfce-exe-checksum and
+# re-prompts if the file changes, so the checksum is recomputed per file rather
+# than copied. GNOME uses metadata::trusted instead; setting both costs nothing
+# and covers either desktop.
+trust_launcher() {
+    local launcher="$1"
+    command -v gio >/dev/null 2>&1 || return 0
+    gio set -t string "${launcher}" metadata::xfce-exe-checksum \
+        "$(sha256sum "${launcher}" | cut -d' ' -f1)" 2>/dev/null || true
+    gio set -t string "${launcher}" metadata::trusted true 2>/dev/null || true
+}
+
+for desktop_file in "${DESKTOP_DIR}"/pixi-*.desktop; do
+    [ -f "${desktop_file}" ] || continue
+    trust_launcher "${desktop_file}"
+done
+
 if [ -d "${HOME}/Desktop" ] || [ -d "/etc/xdg/autostart" ]; then
     mkdir -p "${HOME}/Desktop"
     for desktop_file in "${DESKTOP_DIR}"/pixi-*.desktop; do
@@ -141,7 +187,17 @@ if [ -d "${HOME}/Desktop" ] || [ -d "/etc/xdg/autostart" ]; then
         case "${desktop_file}" in *-terminal.desktop) continue ;; esac
         cp "${desktop_file}" "${HOME}/Desktop/"
         chmod +x "${HOME}/Desktop/$(basename "${desktop_file}")"
+        trust_launcher "${HOME}/Desktop/$(basename "${desktop_file}")"
     done
 fi
+
+# The system-wide entries in /usr/share/applications are written by Ansible and
+# shown in the applications menu, but a user who copies one to their desktop
+# hits the same trust prompt, so mark those the user already has.
+for desktop_file in "${HOME}"/Desktop/*.desktop; do
+    [ -f "${desktop_file}" ] || continue
+    chmod +x "${desktop_file}" 2>/dev/null || true
+    trust_launcher "${desktop_file}"
+done
 
 echo "Pixi AI Tools setup complete. Run 'ai-tools list' to see the environments."

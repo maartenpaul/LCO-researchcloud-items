@@ -60,11 +60,3 @@
       echo "removed=${removed}"
   register: pixi_ai_tools_stale_kernels
   changed_when: "'removed=0' not in pixi_ai_tools_stale_kernels.stdout"
-
-- name: Install the ai-tools helper for users who need to add packages
-  ansible.builtin.copy:
-    src: ai-tools
-    dest: /usr/local/bin/ai-tools
-    mode: "0755"
-    owner: root
-    group: root

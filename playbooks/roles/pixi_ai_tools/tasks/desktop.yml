@@ -108,19 +108,67 @@
     owner: root
     group: root
 
-# Only tools that actually ship a GUI get a menu entry. Probing the built
-# environment beats keeping a hand-written list in step with the upstream repo.
-- name: Find shared environments that provide napari
-  ansible.builtin.stat:
-    path: "{{ pixi_ai_tools_shared_dir }}/{{ item }}/.pixi/envs/default/bin/napari"
+# Inside the desktop there is otherwise no way to start Lab: the desktop
+# flavour has no Lab at all, and on a JupyterHub workspace the browser Lab is
+# outside the session. The launcher picks its own host and always roots Lab at
+# $HOME rather than the read-only shared checkout.
+- name: Install the JupyterLab launcher
+  ansible.builtin.copy:
+    src: ai-tools-lab
+    dest: /usr/local/bin/ai-tools-lab
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Add an application menu entry for JupyterLab
+  ansible.builtin.copy:
+    dest: /usr/share/applications/pixi-jupyterlab.desktop
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Version=1.0
+      Name=JupyterLab
+      Comment=JupyterLab with the shared Pixi kernels, opened in your home directory
+      Exec=ai-tools-lab
+      Icon=applications-science
+      Terminal=true
+      Categories=Development;IDE;
+
+# A menu entry is only worth having where napari has something to do. Several
+# environments install napari as a dependency without any plugin that drives it
+# — stardist was one — and an entry that opens an empty viewer is just noise.
+#
+# ai-tools-has-gui answers "does this environment register a napari plugin",
+# reading the installed distributions rather than keeping a hand-written list
+# that would drift from the upstream repo. It is self-correcting: add a plugin
+# upstream (say `pixi add stardist-napari`) and the entry appears on the next
+# deploy with nothing to change here. The same helper drives the per-user
+# launchers in setup-ai-tools.sh, so the two cannot disagree.
+- name: Find shared environments that register a napari plugin
+  ansible.builtin.command:
+    cmd: /usr/local/bin/ai-tools-has-gui {{ item | quote }} {{ pixi_ai_tools_shared_dir | quote }}
   loop: "{{ pixi_ai_tools_preload_tools }}"
   register: pixi_ai_tools_napari_probe
+  changed_when: false
+  # rc 0 means the environment has a plugin, rc 1 means it has none. Anything
+  # else is the probe itself failing — a blanket failed_when:false once turned a
+  # missing helper into "no tool has a GUI" and silently removed every entry.
+  failed_when: pixi_ai_tools_napari_probe.rc not in [0, 1]
+
+- name: Report what the napari plugin probe found
+  ansible.builtin.debug:
+    msg: >-
+      {{ pixi_ai_tools_napari_probe.results | map(attribute='item')
+         | zip(pixi_ai_tools_napari_probe.results | map(attribute='stdout')
+         | map('trim') | map('default', '(no napari plugin)', true))
+         | map('join', ' -> ') | list }}
 
 - name: Build the list of tools with a GUI
   ansible.builtin.set_fact:
     pixi_ai_tools_gui_tools: >-
       {{ pixi_ai_tools_napari_probe.results
-         | selectattr('stat.exists') | map(attribute='item') | list }}
+         | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
 
 - name: Add an application menu entry per GUI tool
   ansible.builtin.copy:
@@ -135,7 +183,7 @@
       Exec=ai-tools-gui {{ item }} napari
       Icon=applications-science
       Terminal=false
-      Categories=Graphics;Science;Education;
+      Categories=Science;Biology;ImageProcessing;
   loop: "{{ pixi_ai_tools_gui_tools }}"
 
 # Remove entries for tools that are no longer preloaded, so a workspace

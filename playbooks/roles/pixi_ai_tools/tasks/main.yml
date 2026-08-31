@@ -23,6 +23,10 @@
 - name: Deploy the shared tool checkout and package cache
   ansible.builtin.import_tasks: shared_env.yml
 
+# Before the desktop phase, whose napari probe calls ai-tools-has-gui.
+- name: Install the user-facing helper scripts
+  ansible.builtin.import_tasks: helpers.yml
+
 - name: Locate the JupyterHub single-user venv
   ansible.builtin.import_tasks: jupyter_venv.yml
 

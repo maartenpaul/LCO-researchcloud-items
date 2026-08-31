@@ -1,0 +1,27 @@
+---
+# The user-facing helper scripts, installed before anything that uses them.
+#
+# These are deliberately not part of the desktop phase: the per-user runonce
+# script calls ai-tools-has-gui to decide which desktop launchers to write, and
+# that runs on workspaces where the desktop phase is switched off — an SRC
+# desktop-flavour workspace already has a desktop of its own and never runs
+# desktop.yml.
+#
+# The desktop-only helpers (ai-tools-gui, ai-tools-kernel, ai-tools-lab) stay in
+# desktop.yml, since without a desktop there is nothing for them to do.
+
+- name: Install the ai-tools helper for users who need to add packages
+  ansible.builtin.copy:
+    src: ai-tools
+    dest: /usr/local/bin/ai-tools
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Install the napari plugin probe used to decide which tools get a launcher
+  ansible.builtin.copy:
+    src: ai-tools-has-gui
+    dest: /usr/local/bin/ai-tools-has-gui
+    mode: "0755"
+    owner: root
+    group: root
