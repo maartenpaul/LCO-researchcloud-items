@@ -36,6 +36,7 @@ Deploys [Pixi](https://pixi.sh)-based AI/ML bioimage analysis tool environments 
 | `files/run-runonce.sh` | Runonce wrapper for the JupyterHub pre-spawn hook |
 | `files/ai-tools` | User helper: list / fork / reset shared environments |
 | `files/ai-tools-gui` | Launches a GUI tool from its environment, on the GPU via VirtualGL |
+| `files/ai-tools-kernel` | Wraps a kernel in `xvfb-run` so Qt works inside notebooks |
 
 ## Two SRC-specific gotchas this component handles
 
@@ -97,6 +98,25 @@ ai-tools-gui micro_sam python      # the environment's interpreter, with a displ
 ```
 
 It prefers your own copy of a tool if you have forked one, and otherwise uses the shared environment.
+
+### napari inside a notebook
+
+With the desktop installed, `napari.Viewer()` also works in a notebook kernel, which is what `napari.utils.nbscreenshot` is for:
+
+```python
+import numpy as np, napari
+from napari.utils import nbscreenshot
+
+viewer = napari.Viewer()
+viewer.add_image(np.random.random((256, 256)))
+nbscreenshot(viewer)
+```
+
+Qt needs a display even when nothing is shown on screen, and a kernel spawned by JupyterHub has none — so without this the call fails with `could not connect to display`, `Could not load the Qt platform plugin "xcb"`, and takes the kernel down with it. The kernelspecs therefore run under `ai-tools-kernel`, which wraps the kernel in `xvfb-run` (plus `vglrun` when there is a GPU). Each kernel gets its own X server, started with it and torn down with it; X has no isolation between clients, so a single shared display would let any user on the workspace read another's windows.
+
+Qt's `offscreen` platform is not a substitute — it starts, but no GL context is created, so the canvas never renders and `viewer.screenshot()` raises `AttributeError: 'NoneType' object has no attribute 'setsize'`.
+
+**Without** `PIXI_AI_TOOLS_DESKTOP` there is no Xvfb to wrap with: kernels launch directly, and GUI calls in a notebook will still kill the kernel. Use the desktop, or set the parameter.
 
 ### Why not just `ssh -X`
 
@@ -166,6 +186,15 @@ Environments are defined in [AI_tools_pixi](https://github.com/Leiden-Cell-Obser
 grep -A1 "Spawner.args" /etc/jupyterhub/jupyterhub_config.py   # should NOT mention whitelist
 sudo /etc/src/venv/jupyter-venv/bin/jupyter kernelspec list     # should list pixi-<tool>
 ```
+
+**A kernel dies the moment a GUI is opened**, with `could not connect to display` and a Qt `xcb` plugin error. The kernel has no X display. Check that the kernelspec runs under the wrapper and that Xvfb is installed:
+
+```bash
+head -3 /usr/local/share/jupyter/kernels/pixi-<tool>/kernel.json   # argv should start with ai-tools-kernel
+which xvfb-run
+```
+
+Both come from the desktop phase, so this means `PIXI_AI_TOOLS_DESKTOP` was not set when the workspace was deployed.
 
 **A kernel dies immediately.** Its environment was probably not pre-installed (`--frozen` fails when the env is missing). Run `ai-tools list` — anything showing `not built` has no usable shared kernel; add it to `PIXI_AI_TOOLS_PRELOAD` and re-run the playbook.
 

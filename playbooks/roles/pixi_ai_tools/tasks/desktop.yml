@@ -29,6 +29,7 @@
       - xfce4-session
       - xfce4-settings
       - xorg
+      - xvfb
       - xubuntu-icon-theme
     state: present
     update_cache: true
@@ -93,6 +94,16 @@
   ansible.builtin.copy:
     src: ai-tools-gui
     dest: /usr/local/bin/ai-tools-gui
+    mode: "0755"
+    owner: root
+    group: root
+
+# Kernels are wrapped in this so that Qt works inside a notebook — see
+# kernels.yml, and the script itself for why "offscreen" is not an alternative.
+- name: Install the kernel display wrapper
+  ansible.builtin.copy:
+    src: ai-tools-kernel
+    dest: "{{ pixi_ai_tools_kernel_wrapper }}"
     mode: "0755"
     owner: root
     group: root

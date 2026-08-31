@@ -33,6 +33,7 @@ pixi_ai_tools_repo_url: https://github.com/Leiden-Cell-Observatory/AI_tools_pixi
 pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
 pixi_ai_tools_cache_dir: /opt/pixi-cache
 pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels
+pixi_ai_tools_kernel_wrapper: /usr/local/bin/ai-tools-kernel
 # VirtualGL is not in the Ubuntu archive, so it is fetched from the project's
 # own releases. Pinned by version and checksum so a redeploy of this component
 # installs what it installed last time; bump both together.

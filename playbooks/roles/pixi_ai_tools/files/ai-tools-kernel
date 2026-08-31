@@ -1,0 +1,32 @@
+#!/bin/bash
+# ai-tools-kernel — run a Jupyter kernel with a private X display.
+#
+# Qt needs a display even when nothing is shown on screen. A kernel spawned by
+# JupyterHub has none, so "napari.Viewer()" in a notebook aborts with
+#
+#   could not connect to display
+#   Could not load the Qt platform plugin "xcb" in "" even though it was found.
+#
+# and takes the kernel down with it. Qt's "offscreen" platform is not a fix:
+# it starts, but no GL context is created, so the canvas never renders and
+# viewer.screenshot() fails outright.
+#
+# xvfb-run gives each kernel its own X server, torn down when the kernel exits.
+# Per-kernel rather than one shared display: X has no isolation between clients,
+# and these workspaces are multi-user.
+#
+# Usage: ai-tools-kernel <kernel command ...>   (see the kernelspecs in
+# /usr/local/share/jupyter/kernels/pixi-*)
+
+set -euo pipefail
+
+VGLRUN="${VGLRUN:-/opt/VirtualGL/bin/vglrun}"
+
+# Same reasoning as ai-tools-gui: VirtualGL puts OpenGL on the GPU, which only
+# matters once a notebook renders something 3D. Without a GPU, Xvfb's software
+# GL still renders correctly, just more slowly.
+if [ -x "${VGLRUN}" ] && [ -c /dev/nvidiactl ]; then
+    exec xvfb-run -a "${VGLRUN}" -d "${VGL_EGL_DEVICE:-egl}" "$@"
+fi
+
+exec xvfb-run -a "$@"

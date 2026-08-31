@@ -12,6 +12,7 @@ set -euo pipefail
 SHARED_DIR="${SHARED_DIR:-/opt/AI_tools_pixi}"
 PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-/opt/pixi-cache}"
 PIXI_BIN="${PIXI_BIN:-/usr/local/bin/pixi}"
+KERNEL_WRAPPER="${KERNEL_WRAPPER:-/usr/local/bin/ai-tools-kernel}"
 MY_DIR="${HOME}/AI_tools_pixi"
 KERNEL_DIR="${HOME}/.local/share/jupyter/kernels"
 
@@ -94,9 +95,18 @@ cmd_fork() {
     "${PIXI_BIN}" install --manifest-path "${dest}/pixi.toml"
 
     mkdir -p "${KERNEL_DIR}/pixi-${tool}-mine"
+    # Match the shared kernels: when the workspace has the desktop installed,
+    # run under the wrapper that gives the kernel a private X display, so that
+    # napari works in a notebook here too.
+    if [ -x "${KERNEL_WRAPPER}" ]; then
+        kernel_prefix="\"${KERNEL_WRAPPER}\","
+    else
+        kernel_prefix=""
+    fi
     cat > "${KERNEL_DIR}/pixi-${tool}-mine/kernel.json" <<KERNEL_JSON
 {
   "argv": [
+    ${kernel_prefix}
     "${PIXI_BIN}",
     "run",
     "--manifest-path", "${dest}/pixi.toml",
