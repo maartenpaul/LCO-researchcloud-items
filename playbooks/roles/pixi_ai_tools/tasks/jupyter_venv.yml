@@ -1,0 +1,20 @@
+---
+# SRC ships two venvs under /etc/src/venv: src-venv (Ansible/tooling) and
+# jupyter-venv (the one JupyterHub actually spawns single-user servers from).
+# Locate the venv that owns jupyterhub-singleuser rather than assuming a name.
+#
+# Both the desktop and the JupyterHub phases install into that venv, so the
+# discovery lives here and runs once, before either of them.
+
+- name: Locate the JupyterHub single-user launcher
+  ansible.builtin.find:
+    paths: /etc/src/venv
+    patterns: jupyterhub-singleuser
+    recurse: true
+    file_type: file
+  register: pixi_ai_tools_singleuser_launcher
+
+- name: Set single-user venv fact
+  when: pixi_ai_tools_singleuser_launcher.matched > 0
+  ansible.builtin.set_fact:
+    pixi_ai_tools_jupyterhub_venv: "{{ pixi_ai_tools_singleuser_launcher.files[0].path | dirname | dirname }}"

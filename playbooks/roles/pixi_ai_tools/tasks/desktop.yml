@@ -1,0 +1,184 @@
+---
+# A Linux desktop for the GUI tools (napari and friends), reached from the
+# JupyterLab launcher: jupyter-remote-desktop-proxy serves an XFCE session over
+# noVNC through the single-user server that JupyterHub already spawns. No extra
+# port to open and no second login — the hub's own authentication covers it.
+#
+# Why not "ssh -X": X11 forwarding ships drawing commands over the WAN and
+# round-trips on each one. Measured on an SRC A10 workspace, a napari 2D repaint
+# took ~2700 ms over ssh -X against ~6 ms here, because the framebuffer now sits
+# next to the application and only pixels cross the network.
+#
+# VirtualGL then puts OpenGL back on the GPU. TigerVNC renders GL with llvmpipe
+# (software), which is past 60 fps for 2D but not for volume rendering: the same
+# 256^3 MIP rotation measured 114 ms/frame on llvmpipe and 16 ms/frame through
+# "vglrun -d egl". ai-tools-gui applies vglrun, so the menu entries get the GPU.
+#
+# This phase is off by default (PIXI_AI_TOOLS_DESKTOP) — it adds roughly 200
+# packages and about a gigabyte, which is wasted on a workspace where nobody
+# opens a GUI.
+
+- name: Install the XFCE desktop and TigerVNC
+  ansible.builtin.apt:
+    name:
+      - dbus-x11
+      - tigervnc-standalone-server
+      - tigervnc-common
+      - xfce4
+      - xfce4-panel
+      - xfce4-session
+      - xfce4-settings
+      - xorg
+      - xubuntu-icon-theme
+    state: present
+    update_cache: true
+
+# Not packaged by Ubuntu, so it comes from the project's own release. Pinned by
+# version and checksum: an unpinned download would let an upstream release
+# change what a redeploy of this component installs.
+#
+# The download is guarded on the installed version because the package file is
+# removed afterwards — without the guard every redeploy would fetch the same
+# 20 MB again and report changed.
+- name: Check which VirtualGL version is installed
+  ansible.builtin.command: dpkg-query -W -f=${Version} virtualgl
+  register: pixi_ai_tools_virtualgl_installed
+  changed_when: false
+  failed_when: false
+
+# The package version carries a build date the release tag does not
+# ("3.1.5-20260814"), so compare only the part before the hyphen.
+- name: Install VirtualGL from the pinned release
+  when: >-
+    pixi_ai_tools_virtualgl_installed.stdout | split('-') | first
+    != pixi_ai_tools_virtualgl_version
+  block:
+    - name: Download the VirtualGL package
+      ansible.builtin.get_url:
+        url: "{{ pixi_ai_tools_virtualgl_url }}"
+        dest: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+        checksum: "sha256:{{ pixi_ai_tools_virtualgl_sha256 }}"
+        mode: "0644"
+
+    - name: Install VirtualGL
+      ansible.builtin.apt:
+        deb: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+
+  always:
+    - name: Remove the VirtualGL package file
+      ansible.builtin.file:
+        path: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+        state: absent
+
+# vglrun's EGL back end talks to /dev/nvidiactl, which the driver already
+# exposes world-readable, so no group membership is needed. Report it rather
+# than assume it: without an NVIDIA device ai-tools-gui falls back to software
+# rendering, and that is worth seeing in the deploy log.
+- name: Check for the NVIDIA device node used by the VirtualGL EGL back end
+  ansible.builtin.stat:
+    path: /dev/nvidiactl
+  register: pixi_ai_tools_nvidiactl
+
+- name: Report the OpenGL path GUI tools will take
+  ansible.builtin.debug:
+    msg: >-
+      {% if pixi_ai_tools_nvidiactl.stat.exists %}
+      VirtualGL will render OpenGL on the GPU (vglrun -d egl).
+      {% else %}
+      No /dev/nvidiactl — GUI tools will render OpenGL in software (llvmpipe).
+      Fine for 2D, slow for volume rendering.
+      {% endif %}
+
+- name: Install the ai-tools-gui launcher
+  ansible.builtin.copy:
+    src: ai-tools-gui
+    dest: /usr/local/bin/ai-tools-gui
+    mode: "0755"
+    owner: root
+    group: root
+
+# Only tools that actually ship a GUI get a menu entry. Probing the built
+# environment beats keeping a hand-written list in step with the upstream repo.
+- name: Find shared environments that provide napari
+  ansible.builtin.stat:
+    path: "{{ pixi_ai_tools_shared_dir }}/{{ item }}/.pixi/envs/default/bin/napari"
+  loop: "{{ pixi_ai_tools_preload_tools }}"
+  register: pixi_ai_tools_napari_probe
+
+- name: Build the list of tools with a GUI
+  ansible.builtin.set_fact:
+    pixi_ai_tools_gui_tools: >-
+      {{ pixi_ai_tools_napari_probe.results
+         | selectattr('stat.exists') | map(attribute='item') | list }}
+
+- name: Add an application menu entry per GUI tool
+  ansible.builtin.copy:
+    dest: "/usr/share/applications/pixi-{{ item }}-napari.desktop"
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Version=1.0
+      Name=napari ({{ item }})
+      Comment=napari from the shared {{ item }} Pixi environment, GPU accelerated
+      Exec=ai-tools-gui {{ item }} napari
+      Icon=applications-science
+      Terminal=false
+      Categories=Graphics;Science;Education;
+  loop: "{{ pixi_ai_tools_gui_tools }}"
+
+# Remove entries for tools that are no longer preloaded, so a workspace
+# redeployed with a narrower PIXI_AI_TOOLS_PRELOAD does not keep menu items
+# that launch nothing.
+#
+# The wanted filenames are built here rather than in the `when` below, so that
+# the conditional is a plain string comparison with no regex in it. A bare
+# `when` is templated once more than an expression inside {{ }} and needs its
+# backslashes doubled; getting that wrong silently strips the name to nothing,
+# nothing matches, and the task deletes every entry including the ones just
+# written. Inside {{ }}, as here, a single backslash is the correct form —
+# "\\1" would substitute a literal backslash-one.
+- name: Build the menu entry filenames the GUI tools should have
+  ansible.builtin.set_fact:
+    pixi_ai_tools_gui_entries: >-
+      {{ pixi_ai_tools_gui_tools
+         | map('regex_replace', '^(.*)$', 'pixi-\1-napari.desktop') | list }}
+
+- name: Find existing GUI menu entries
+  ansible.builtin.find:
+    paths: /usr/share/applications
+    patterns: "pixi-*-napari.desktop"
+    file_type: file
+  register: pixi_ai_tools_existing_entries
+
+- name: Remove menu entries for tools that are no longer available
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ pixi_ai_tools_existing_entries.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: item.path | basename not in pixi_ai_tools_gui_entries
+
+# The proxy is an extension of the single-user server, so it belongs in the venv
+# that spawns it. On a workspace without JupyterHub (the SRC desktop flavour)
+# there is nothing to extend — that flavour has a desktop of its own, and the
+# menu entries and VirtualGL installed above are what this phase contributes.
+- name: Install jupyter-remote-desktop-proxy into the JupyterHub single-user venv
+  when: pixi_ai_tools_singleuser_launcher.matched > 0
+  ansible.builtin.pip:
+    name: jupyter-remote-desktop-proxy
+    virtualenv: "{{ pixi_ai_tools_jupyterhub_venv }}"
+
+- name: Display desktop integration status
+  ansible.builtin.debug:
+    msg: >-
+      {% if pixi_ai_tools_singleuser_launcher.matched > 0 %}
+      Remote desktop installed. Users open it from the JupyterLab launcher's
+      "Desktop" tile.
+      {% else %}
+      No JupyterHub on this workspace, so no Desktop tile was added; use the
+      workspace's own desktop.
+      {% endif %}
+      GUI menu entries: {{ pixi_ai_tools_gui_tools | join(', ') | default('(none)', true) }}.
+      From a terminal: ai-tools-gui <tool> napari.

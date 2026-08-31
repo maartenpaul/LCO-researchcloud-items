@@ -17,6 +17,13 @@ pixi_ai_tools_preload: >-
   {{ PIXI_AI_TOOLS_PRELOAD | default(lookup('env', 'PIXI_AI_TOOLS_PRELOAD'), true)
      | default('all', true) }}
 
+# Off by default: the desktop costs roughly 200 packages and about a gigabyte,
+# which is wasted on a workspace where nobody opens a GUI tool. Turn it on for
+# courses that use napari.
+pixi_ai_tools_desktop: >-
+  {{ PIXI_AI_TOOLS_DESKTOP | default(lookup('env', 'PIXI_AI_TOOLS_DESKTOP'), true)
+     | default(false, true) }}
+
 pixi_ai_tools_home: /usr/local
 pixi_ai_tools_bin: /usr/local/bin/pixi
 pixi_ai_tools_runonce_dir: /etc/runonce.d
@@ -26,3 +33,14 @@ pixi_ai_tools_repo_url: https://github.com/Leiden-Cell-Observatory/AI_tools_pixi
 pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
 pixi_ai_tools_cache_dir: /opt/pixi-cache
 pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels
+# VirtualGL is not in the Ubuntu archive, so it is fetched from the project's
+# own releases. Pinned by version and checksum so a redeploy of this component
+# installs what it installed last time; bump both together.
+pixi_ai_tools_virtualgl_version: "3.1.5"
+pixi_ai_tools_virtualgl_sha256: df3f7788ce41b182a47c0d298e5cd6d2d63579522cb41825970b7726e825485e
+pixi_ai_tools_virtualgl_deb: "virtualgl_{{ pixi_ai_tools_virtualgl_version }}_amd64.deb"
+# The line break sits inside the Jinja expression, where the folded-scalar
+# newline becomes an ignored space rather than a space in the URL.
+pixi_ai_tools_virtualgl_url: >-
+  https://github.com/VirtualGL/virtualgl/releases/download/{{
+  pixi_ai_tools_virtualgl_version }}/{{ pixi_ai_tools_virtualgl_deb }}

@@ -14,6 +14,7 @@ Deploys [Pixi](https://pixi.sh)-based AI/ML bioimage analysis tool environments 
 4. Registers a **system-wide Jupyter kernel** per pre-installed tool — every user sees them at first login, with no per-user setup
 5. Sets up a **shared package cache** at `/opt/pixi-cache` that users can write to
 6. Installs `pixi-kernel` into the JupyterHub single-user venv and lifts SRC's kernel allowlist (see below)
+7. Optionally (`PIXI_AI_TOOLS_DESKTOP`) installs a remote desktop for GUI tools — see [Running GUI tools](#running-gui-tools)
 
 **At first user login (runonce):** shell completion, desktop launchers for GUI tools, and cleanup of kernels left by older versions. No cloning, no environment installs.
 
@@ -28,10 +29,13 @@ Deploys [Pixi](https://pixi.sh)-based AI/ML bioimage analysis tool environments 
 | `tasks/gpu.yml` | NVIDIA GPU detection (informational only) |
 | `tasks/shared_env.yml` | Shared checkout, shared cache + ACLs, environment preload |
 | `tasks/kernels.yml` | System-wide kernelspecs, stale-kernel cleanup, `ai-tools` helper |
+| `tasks/jupyter_venv.yml` | Locates the venv JupyterHub spawns single-user servers from |
+| `tasks/desktop.yml` | XFCE + TigerVNC + VirtualGL + noVNC proxy and GUI menu entries |
 | `tasks/jupyterhub.yml` | pixi-kernel, pre-spawn hook, kernel allowlist override |
 | `files/setup-ai-tools.sh` | Per-user runonce script (completion, launchers, cleanup) |
 | `files/run-runonce.sh` | Runonce wrapper for the JupyterHub pre-spawn hook |
 | `files/ai-tools` | User helper: list / fork / reset shared environments |
+| `files/ai-tools-gui` | Launches a GUI tool from its environment, on the GPU via VirtualGL |
 
 ## Two SRC-specific gotchas this component handles
 
@@ -77,8 +81,35 @@ Declare these in step 3 of the component wizard. SRC hands each parameter to the
 |-----------|---------|-------------|
 | `PIXI_AI_TOOLS_VERSION` | `master` | Git branch or tag of AI_tools_pixi to deploy |
 | `PIXI_AI_TOOLS_PRELOAD` | `all` | Comma-separated tools to pre-install, or `all`. Only pre-installed tools get a shared kernel. |
+| `PIXI_AI_TOOLS_DESKTOP` | `false` | Install the remote desktop so GUI tools such as napari can be used. Adds ~200 packages and ~1 GB. |
 
 **Set `PIXI_AI_TOOLS_PRELOAD` to just the tools your course uses.** `all` pre-installs eight environments (~50 GB, a long deploy). Something like `cellpose,stardist,CAREamics` keeps the deploy short. This cost is paid once, at deploy time, before any student logs in — never on a student's first kernel click.
+
+## Running GUI tools
+
+Set `PIXI_AI_TOOLS_DESKTOP` to `true` and the workspace gets a **Desktop** tile in the JupyterLab launcher: an XFCE session served over noVNC by `jupyter-remote-desktop-proxy`, running inside the single-user server JupyterHub already spawns. It needs no extra port and no second login — the hub's authentication covers it. The desktop's application menu lists a `napari (<tool>)` entry for every pre-installed environment that ships napari.
+
+From a terminal — in the desktop, or over `ssh -X` — the same launcher is available directly:
+
+```bash
+ai-tools-gui micro_sam napari      # or any other pre-installed tool
+ai-tools-gui micro_sam python      # the environment's interpreter, with a display
+```
+
+It prefers your own copy of a tool if you have forked one, and otherwise uses the shared environment.
+
+### Why not just `ssh -X`
+
+X11 forwarding sends drawing commands across the network and round-trips on each one, which is what makes it feel slow on a WAN rather than any lack of GPU. Both effects are worth knowing about, measured on an A10 workspace with napari:
+
+| napari operation | `ssh -X` | Desktop (llvmpipe) | Desktop + VirtualGL |
+|------------------|---------:|-------------------:|--------------------:|
+| 2D 1024² repaint | ~2700 ms | 6 ms | 17 ms |
+| 3D 256³ MIP rotation | — | 114 ms | 16 ms |
+
+Moving the framebuffer next to the application is the large win, and it applies whether or not there is a GPU. VirtualGL matters for volume rendering specifically: `ai-tools-gui` runs everything through `vglrun -d egl` when `/dev/nvidiactl` is present, and falls back to software rendering when it is not.
+
+`ssh -X` still works and needs nothing installed — it is fine for a dialog box, and painful for an image canvas.
 
 ## Prerequisites
 
@@ -97,7 +128,7 @@ Disk: size the VM for the shared install (~50 GB for all eight environments) plu
 
 1. Create a new **component** in the SRC portal
 2. Set the source to this repository's `playbooks/pixi-ai-tools.yml` playbook
-3. Optionally set `PIXI_AI_TOOLS_VERSION` and `PIXI_AI_TOOLS_PRELOAD`
+3. Optionally set `PIXI_AI_TOOLS_VERSION`, `PIXI_AI_TOOLS_PRELOAD` and `PIXI_AI_TOOLS_DESKTOP`
 4. Add the plugin to a **catalog item** alongside SRC-OS and SRC-External
 5. For JupyterLab workspaces, also include the Jupyter component — kernel integration is automatic
 
@@ -107,6 +138,7 @@ Disk: size the VM for the shared install (~50 GB for all eight environments) plu
 ansible-galaxy collection install -r playbooks/requirements.yml
 sudo ansible-playbook playbooks/pixi-ai-tools.yml                                   # preloads everything
 sudo ansible-playbook playbooks/pixi-ai-tools.yml -e PIXI_AI_TOOLS_PRELOAD=cellpose,stardist
+sudo ansible-playbook playbooks/pixi-ai-tools.yml -e PIXI_AI_TOOLS_DESKTOP=true          # with the GUI desktop
 ```
 
 Passing parameters as extra-vars exercises the same code path SRC uses. Note that `-e key=value` splits on whitespace, so a value containing spaces needs the JSON form — `-e '{"PIXI_AI_TOOLS_PRELOAD": "cellpose, stardist"}'` — which is also how SRC passes them. The equivalent environment variables still work, but testing only that way will not catch a parameter the playbook fails to read as a variable.
@@ -138,3 +170,18 @@ sudo /etc/src/venv/jupyter-venv/bin/jupyter kernelspec list     # should list pi
 **A kernel dies immediately.** Its environment was probably not pre-installed (`--frozen` fails when the env is missing). Run `ai-tools list` — anything showing `not built` has no usable shared kernel; add it to `PIXI_AI_TOOLS_PRELOAD` and re-run the playbook.
 
 **A user's kernel shadows the shared one.** Kernelspecs in `~/.local/share/jupyter/kernels` win over system ones with the same name. The role removes per-user `pixi-<tool>` kernels that point at a home-directory clone; personal forks (`pixi-<tool>-mine`) use a distinct name and are left alone.
+
+**The Desktop tile is missing from the launcher.** Check that the extension landed in the venv that actually spawns single-user servers, and that the hub was restarted afterwards:
+
+```bash
+/etc/src/venv/jupyter-venv/bin/jupyter server extension list | grep desktop
+systemctl status jupyterhub
+```
+
+**A GUI tool renders slowly in the desktop.** Confirm it is on the GPU rather than llvmpipe:
+
+```bash
+DISPLAY=:1 /opt/VirtualGL/bin/vglrun -d egl /opt/VirtualGL/bin/glxinfo | grep "OpenGL renderer"
+```
+
+This should name the NVIDIA card. If it says `llvmpipe`, VirtualGL is not reaching the GPU — check that `/dev/nvidiactl` exists and that `nvidia-smi` works.

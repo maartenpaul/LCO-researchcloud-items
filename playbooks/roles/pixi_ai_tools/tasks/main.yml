@@ -26,5 +26,13 @@
 - name: Register system-wide Jupyter kernels
   ansible.builtin.import_tasks: kernels.yml
 
+- name: Locate the JupyterHub single-user venv
+  ansible.builtin.import_tasks: jupyter_venv.yml
+
+# Before the JupyterHub phase, so its restart picks up the desktop extension too.
+- name: Install the remote desktop for GUI tools
+  ansible.builtin.import_tasks: desktop.yml
+  when: pixi_ai_tools_desktop | bool
+
 - name: Integrate with JupyterHub when present
   ansible.builtin.import_tasks: jupyterhub.yml
