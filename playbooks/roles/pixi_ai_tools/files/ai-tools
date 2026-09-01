@@ -12,6 +12,7 @@ set -euo pipefail
 SHARED_DIR="${SHARED_DIR:-/opt/AI_tools_pixi}"
 PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-/opt/pixi-cache}"
 PIXI_BIN="${PIXI_BIN:-/usr/local/bin/pixi}"
+KERNEL_WRAPPER="${KERNEL_WRAPPER:-/usr/local/bin/ai-tools-kernel}"
 MY_DIR="${HOME}/AI_tools_pixi"
 KERNEL_DIR="${HOME}/.local/share/jupyter/kernels"
 
@@ -33,6 +34,16 @@ Your copy appears in JupyterLab as "<tool> (Pixi, mine)".
 EOF
 }
 
+# An environment directory is created before any package lands in it, so its
+# mere existence proves nothing: an install that failed part way — the shared
+# cache not being writable, say — leaves .pixi/envs/default/conda-meta holding
+# only "history". Treating that as a finished copy made `fork` refuse to carry
+# on and `list` claim a copy the user did not have. A package leaves a .json
+# behind in conda-meta, so that is what gets counted.
+env_is_built() {
+    [ -n "$(find "$1/conda-meta" -maxdepth 1 -name '*.json' -print -quit 2>/dev/null)" ]
+}
+
 available_tools() {
     for d in "${SHARED_DIR}"/*/; do
         [ -f "${d}pixi.toml" ] || continue
@@ -43,15 +54,17 @@ available_tools() {
 cmd_list() {
     printf '%-16s %-12s %s\n' "TOOL" "SHARED" "YOUR COPY"
     for tool in $(available_tools); do
-        if [ -d "${SHARED_DIR}/${tool}/.pixi/envs/default" ]; then
+        if env_is_built "${SHARED_DIR}/${tool}/.pixi/envs/default"; then
             shared="ready"
         else
             shared="not built"
         fi
         # A plain checkout of the repo in $HOME is not a fork — only an actually
         # built environment counts.
-        if [ -d "${MY_DIR}/${tool}/.pixi/envs/default" ]; then
+        if env_is_built "${MY_DIR}/${tool}/.pixi/envs/default"; then
             mine="yes (~/AI_tools_pixi/${tool})"
+        elif [ -d "${MY_DIR}/${tool}" ]; then
+            mine="incomplete — run 'ai-tools fork ${tool}' again"
         else
             mine="-"
         fi
@@ -67,13 +80,17 @@ cmd_fork() {
     fi
 
     local dest="${MY_DIR}/${tool}"
-    if [ -d "${dest}/.pixi/envs/default" ]; then
+    if env_is_built "${dest}/.pixi/envs/default"; then
         echo "You already have a copy at ${dest}."
         echo "Add packages with: cd ${dest} && pixi add <package>"
         exit 0
     fi
 
-    echo "Creating your own copy of '${tool}' at ${dest}..."
+    if [ -d "${dest}" ]; then
+        echo "Finishing an earlier copy of '${tool}' at ${dest} that did not complete..."
+    else
+        echo "Creating your own copy of '${tool}' at ${dest}..."
+    fi
     mkdir -p "${dest}"
     # Copy only the manifest and lock file — never the shared .pixi/ directory.
     # pixi rebuilds the environment from the lock, hardlinking from the shared
@@ -94,9 +111,18 @@ cmd_fork() {
     "${PIXI_BIN}" install --manifest-path "${dest}/pixi.toml"
 
     mkdir -p "${KERNEL_DIR}/pixi-${tool}-mine"
+    # Match the shared kernels: when the workspace has the desktop installed,
+    # run under the wrapper that gives the kernel a private X display, so that
+    # napari works in a notebook here too.
+    if [ -x "${KERNEL_WRAPPER}" ]; then
+        kernel_prefix="\"${KERNEL_WRAPPER}\","
+    else
+        kernel_prefix=""
+    fi
     cat > "${KERNEL_DIR}/pixi-${tool}-mine/kernel.json" <<KERNEL_JSON
 {
   "argv": [
+    ${kernel_prefix}
     "${PIXI_BIN}",
     "run",
     "--manifest-path", "${dest}/pixi.toml",

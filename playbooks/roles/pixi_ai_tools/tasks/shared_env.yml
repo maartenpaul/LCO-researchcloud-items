@@ -14,12 +14,44 @@
     name: acl
     state: present
 
-- name: Discover the primary group shared by workspace users
+# Which group should own the shared cache — the one every member of the
+# workspace is in.
+#
+# This used to take the most common *primary* group of the /home users. That
+# holds on a JupyterHub workspace, where everyone's primary group is the SRC
+# collaborative organisation, but not on a desktop-flavour one, where each user
+# gets a private primary group of their own and the CO is a secondary group.
+# There the count is an n-way tie and the winner is whichever user sorted first,
+# so the cache ended up owned by one student's private group and nobody else
+# could write to it — which silently breaks `ai-tools fork`, the one route users
+# have for installing a package of their own.
+#
+# So: look at every group these users belong to, and prefer the SRC CO group,
+# which is named rsc_co_<id>. Counting alone is not enough, since `sudoers` and
+# `fuse` are just as universal and are not what we want owning a package cache.
+- name: Discover the group shared by workspace users
   ansible.builtin.shell:
-    cmd: >-
-      set -o pipefail;
-      getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\//
-      { print $4 }' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}'
+    cmd: |
+      set -o pipefail
+      users=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\// { print $1 }')
+      [ -n "$users" ] || exit 0
+      memberships() {
+          for u in $users; do
+              # A user's own private group says nothing about who they share with.
+              id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -vx "$u"
+          done
+      }
+      co=$(memberships | grep -E '^rsc_co_[0-9]+$' | sort | uniq -c | sort -rn |
+           head -1 | awk '{print $2}')
+      if [ -n "$co" ]; then
+          echo "$co"
+          exit 0
+      fi
+      # Not an SRC workspace: fall back to the most widely shared non-system
+      # group, skipping the ones every Ubuntu account happens to be in.
+      memberships |
+          grep -vxE 'sudo|sudoers|users|adm|cdrom|dip|plugdev|lxd|fuse|video|render' |
+          sort | uniq -c | sort -rn | head -1 | awk '{print $2}'
     executable: /bin/bash
   register: pixi_ai_tools_co_gid_raw
   changed_when: false
@@ -27,6 +59,17 @@
 - name: Set workspace group fact
   ansible.builtin.set_fact:
     pixi_ai_tools_workspace_gid: "{{ pixi_ai_tools_co_gid_raw.stdout | trim }}"
+
+- name: Report the group that will own the shared cache
+  ansible.builtin.debug:
+    msg: >-
+      {% if pixi_ai_tools_workspace_gid | length > 0 %}
+      Shared cache group: {{ pixi_ai_tools_workspace_gid }}. Users in it can
+      `ai-tools fork` a tool and add packages to their own copy.
+      {% else %}
+      No shared group found for the workspace users — the pixi cache will be
+      root-owned and `ai-tools fork` will fail for everyone but root.
+      {% endif %}
 
 - name: Create shared pixi cache directory
   ansible.builtin.file:
@@ -43,6 +86,51 @@
     line: "PIXI_CACHE_DIR={{ pixi_ai_tools_cache_dir }}"
     create: true
     mode: "0644"
+
+# Older pixi releases wrote lock files in a layout the current one migrates on
+# sight, so a plain `pixi install` rewrote every lock it touched. Those are
+# tracked files, so the checkout went dirty and the clone task below — rightly
+# refusing to discard local changes — failed on every redeploy after the first,
+# taking the whole play with it. The preload task now passes --locked and no
+# longer rewrites anything, but workspaces built before that fix still carry the
+# modifications, and would stay stuck without this.
+#
+# Only lock files are restored, and only where the tool's pixi.toml is itself
+# untouched. A lock on its own changes because pixi rewrote it; a lock next to a
+# modified manifest means somebody ran `pixi add` in the shared checkout to try a
+# dependency, and their lock is real work. Restoring it would silently undo that
+# and leave the manifest describing something the lock does not — which --locked
+# then refuses to install. Anything else a person changed is left alone and will
+# still stop the clone task, which is what force=no is for.
+- name: Check whether the shared checkout is already a git repository
+  ansible.builtin.stat:
+    path: "{{ pixi_ai_tools_shared_dir }}/.git"
+  register: pixi_ai_tools_shared_git
+
+# noqa: command-instead-of-module — the git module manages a whole checkout;
+# it cannot restore selected paths, which is the entire point here.
+- name: Restore lock files that pixi rewrote  # noqa: command-instead-of-module
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      restored=""
+      while read -r _ lock; do
+          [ -n "$lock" ] || continue
+          tool_dir=$(dirname "$lock")
+          # A modified manifest alongside it means this is someone's own work.
+          if [ -n "$(git status --porcelain -- "$tool_dir/pixi.toml")" ]; then
+              echo "keeping $lock: $tool_dir/pixi.toml is modified too" >&2
+              continue
+          fi
+          git checkout -- "$lock"
+          restored="${restored} ${lock}"
+      done < <(git status --porcelain -- '*/pixi.lock')
+      [ -z "${restored}" ] || echo "restored:${restored}"
+    executable: /bin/bash
+    chdir: "{{ pixi_ai_tools_shared_dir }}"
+  register: pixi_ai_tools_restored_locks
+  when: pixi_ai_tools_shared_git.stat.exists
+  changed_when: "'restored:' in pixi_ai_tools_restored_locks.stdout"
 
 - name: Clone AI_tools_pixi to the shared location
   ansible.builtin.git:
@@ -97,14 +185,45 @@
       Available: {{ pixi_ai_tools_all_tools | join(', ') }}.
       Only pre-installed tools get a shared Jupyter kernel — users cannot write to {{ pixi_ai_tools_shared_dir }}.
 
-# The long pole of the deploy. Runs once, before any student logs in.
+# The long pole of the deploy. Runs before any student logs in.
+#
+# --locked installs exactly what the lock file says and refuses to rewrite it,
+# which is what keeps the checkout clean for the next deploy. It also fails
+# loudly if a lock has drifted from its pixi.toml, rather than silently building
+# something the repository never described — the reason for preferring it over
+# --frozen, which skips that check.
+#
+# There is deliberately no `creates:` guard. It used to skip any tool whose
+# environment directory already existed, which meant a redeploy that pulled a
+# changed manifest kept serving the old environment and the update quietly did
+# nothing. Re-running costs ~0.1s per tool when the environment already matches
+# its lock, so the guard bought nothing.
+#
+# pixi prints the same output whether or not it did any work, so `changed` is
+# taken from conda-meta, whose contents change exactly when packages do.
+#
+# `set -e` is what makes the --locked failure above actually reach Ansible.
+# Without it the script's exit status is the trailing `if`, which is always 0:
+# a failed install would be reported as ok, and since nothing was installed
+# conda-meta would be unchanged in both samples, so it would also be reported
+# as unchanged. The deploy then carried on and kernels.yml registered a kernel
+# for an environment that does not exist.
 - name: Pre-install shared pixi environments
-  ansible.builtin.command:
-    cmd: "{{ pixi_ai_tools_bin }} install --manifest-path {{ pixi_ai_tools_shared_dir }}/{{ item }}/pixi.toml"
-    creates: "{{ pixi_ai_tools_shared_dir }}/{{ item }}/.pixi/envs/default/conda-meta"
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      meta="{{ pixi_ai_tools_shared_dir }}/{{ item }}/.pixi/envs/default/conda-meta"
+      before=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
+      "{{ pixi_ai_tools_bin }}" install --locked \
+        --manifest-path "{{ pixi_ai_tools_shared_dir }}/{{ item }}/pixi.toml"
+      after=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
+      if [ "$before" = "$after" ]; then echo pixi-unchanged; else echo pixi-changed; fi
+    executable: /bin/bash
   environment:
     PIXI_CACHE_DIR: "{{ pixi_ai_tools_cache_dir }}"
   loop: "{{ pixi_ai_tools_preload_tools }}"
+  register: pixi_ai_tools_preload
+  changed_when: "'pixi-changed' in pixi_ai_tools_preload.stdout"
 
 - name: Grant the workspace group write access to the shared cache
   ansible.builtin.command:

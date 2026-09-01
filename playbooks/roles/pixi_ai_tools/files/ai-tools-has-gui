@@ -1,0 +1,44 @@
+#!/bin/bash
+# ai-tools-has-gui — does this shared environment register a napari plugin?
+#
+# Exits 0 and prints the plugin names if it does, exits 1 otherwise. Used to
+# decide which tools deserve a "napari (<tool>)" launcher: several environments
+# pull napari in as a dependency without anything that drives it — stardist was
+# one — and a launcher that opens an empty viewer is only confusing.
+#
+# The test reads the installed distributions' entry points rather than starting
+# napari to ask it. Same answer, but in milliseconds rather than seconds, which
+# is what lets the per-user runonce script use it at login as well as the
+# playbook at deploy time.
+#
+# napari, napari-console and napari-svg ship with napari itself, so they prove
+# nothing about the environment and are excluded.
+#
+# Usage: ai-tools-has-gui <tool> [shared_dir]
+
+set -uo pipefail
+
+tool="${1:-}"
+shared_dir="${2:-${SHARED_DIR:-/opt/AI_tools_pixi}}"
+
+if [ -z "${tool}" ]; then
+    echo "Usage: ai-tools-has-gui <tool> [shared_dir]" >&2
+    exit 2
+fi
+
+env_dir="${shared_dir}/${tool}/.pixi/envs/default"
+[ -d "${env_dir}" ] || exit 1
+
+plugins=$(
+    grep -rlsI 'napari\.manifest' \
+        "${env_dir}"/lib/python*/site-packages/*.dist-info/entry_points.txt 2>/dev/null |
+        xargs -r -n1 dirname |
+        xargs -r -n1 basename |
+        sed 's/-[0-9].*$//' |
+        sort -u |
+        grep -vxE 'napari|napari_console|napari_svg' |
+        paste -sd, -
+)
+
+[ -n "${plugins}" ] || exit 1
+echo "${plugins}"

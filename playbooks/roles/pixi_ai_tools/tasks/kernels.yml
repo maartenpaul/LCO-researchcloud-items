@@ -6,6 +6,16 @@
     mode: "0755"
   loop: "{{ pixi_ai_tools_preload_tools }}"
 
+# With the desktop installed, kernels run under ai-tools-kernel, which gives
+# each one a private X display. Qt needs a display even when nothing is shown,
+# so without this "napari.Viewer()" in a notebook kills the kernel with
+# 'could not connect to display'. Without the desktop there is no Xvfb to wrap
+# with, and the kernels are launched directly as before.
+- name: Decide whether kernels run under the display wrapper
+  ansible.builtin.set_fact:
+    pixi_ai_tools_kernel_prefix: >-
+      {{ [pixi_ai_tools_kernel_wrapper] if pixi_ai_tools_desktop | bool else [] }}
+
 # System-wide kernels are visible to every user at first login, with no
 # per-user registration step. --frozen means "use the lock file as-is":
 # no solve, no write to /opt, and a kernel that starts in seconds instead
@@ -14,22 +24,19 @@
   ansible.builtin.copy:
     dest: "{{ pixi_ai_tools_kernel_dir }}/pixi-{{ item }}/kernel.json"
     mode: "0644"
-    content: |
-      {
-        "argv": [
-          "{{ pixi_ai_tools_bin }}",
-          "run",
-          "--frozen",
-          "--manifest-path", "{{ pixi_ai_tools_shared_dir }}/{{ item }}/pixi.toml",
-          "python", "-m", "ipykernel_launcher",
-          "-f", "{connection_file}"
-        ],
-        "display_name": "{{ item }} (Pixi, shared)",
-        "language": "python",
-        "env": {
-          "PIXI_CACHE_DIR": "{{ pixi_ai_tools_cache_dir }}"
-        }
-      }
+    content: "{{ pixi_ai_tools_kernel_spec | to_nice_json }}\n"
+  vars:
+    pixi_ai_tools_kernel_spec:
+      argv: >-
+        {{ pixi_ai_tools_kernel_prefix + [
+             pixi_ai_tools_bin, 'run', '--frozen',
+             '--manifest-path', pixi_ai_tools_shared_dir ~ '/' ~ item ~ '/pixi.toml',
+             'python', '-m', 'ipykernel_launcher',
+             '-f', '{connection_file}'] }}
+      display_name: "{{ item }} (Pixi, shared)"
+      language: python
+      env:
+        PIXI_CACHE_DIR: "{{ pixi_ai_tools_cache_dir }}"
   loop: "{{ pixi_ai_tools_preload_tools }}"
 
 # Kernelspecs in a user's ~/.local/share/jupyter/kernels take precedence over
@@ -53,11 +60,3 @@
       echo "removed=${removed}"
   register: pixi_ai_tools_stale_kernels
   changed_when: "'removed=0' not in pixi_ai_tools_stale_kernels.stdout"
-
-- name: Install the ai-tools helper for users who need to add packages
-  ansible.builtin.copy:
-    src: ai-tools
-    dest: /usr/local/bin/ai-tools
-    mode: "0755"
-    owner: root
-    group: root

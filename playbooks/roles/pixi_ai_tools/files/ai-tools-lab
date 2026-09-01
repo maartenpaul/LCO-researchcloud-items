@@ -1,0 +1,48 @@
+#!/bin/bash
+# ai-tools-lab — start JupyterLab from inside the desktop session.
+#
+# The desktop flavour of a workspace has no Lab entry point at all, and even on
+# a JupyterHub workspace there is nothing to click inside the desktop itself.
+#
+# Which Lab: the workspace's own venv if SRC installed one, otherwise the first
+# shared environment that ships jupyter-lab. The host barely matters — the pixi
+# kernels are registered system-wide in /usr/local/share/jupyter/kernels, so any
+# Lab on this machine sees all of them.
+#
+# Lab is always rooted at $HOME. Starting it from inside a tool directory would
+# root the file browser in /opt/AI_tools_pixi, which is read-only for users, so
+# nothing could be saved and every new notebook would fail.
+
+set -euo pipefail
+
+SHARED_DIR="${SHARED_DIR:-/opt/AI_tools_pixi}"
+SRC_VENV_LAB="${SRC_VENV_LAB:-/etc/src/venv/jupyter-venv/bin/jupyter-lab}"
+
+find_lab() {
+    if [ -x "${SRC_VENV_LAB}" ]; then
+        echo "${SRC_VENV_LAB}"
+        return 0
+    fi
+    for env_lab in "${SHARED_DIR}"/*/.pixi/envs/default/bin/jupyter-lab; do
+        if [ -x "${env_lab}" ]; then
+            echo "${env_lab}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! lab=$(find_lab); then
+    msg="No JupyterLab found on this workspace."
+    # In a desktop session a failure that only prints to a closed terminal is
+    # invisible, so say it in a dialog when one is available.
+    if command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+        zenity --error --no-wrap --text "${msg}"
+    fi
+    echo "${msg}" >&2
+    exit 1
+fi
+
+# Anything passed to this script is handed to Lab, so it can still be run by
+# hand with extra options. root_dir comes first so an explicit one wins.
+exec "${lab}" --ServerApp.root_dir="${HOME}" "$@"

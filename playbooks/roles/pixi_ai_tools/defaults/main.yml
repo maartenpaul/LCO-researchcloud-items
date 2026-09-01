@@ -17,6 +17,29 @@ pixi_ai_tools_preload: >-
   {{ PIXI_AI_TOOLS_PRELOAD | default(lookup('env', 'PIXI_AI_TOOLS_PRELOAD'), true)
      | default('all', true) }}
 
+# Off by default: the desktop costs roughly 200 packages and about a gigabyte,
+# which is wasted on a workspace where nobody opens a GUI tool. Turn it on for
+# courses that use napari.
+#
+# Install-only. Setting this back to false on a workspace that was deployed with
+# it true only skips the desktop phase; it does not undo it. The kernels do
+# converge — kernels.yml keys the display wrapper off this same variable and
+# rewrites every kernel.json without it — so nothing breaks, but XFCE,
+# VirtualGL, the menu entries, the wrappers and the Desktop tile stay, and the
+# gigabyte is not reclaimed. To actually drop the desktop, redeploy the
+# workspace from scratch with it off.
+pixi_ai_tools_desktop: >-
+  {{ PIXI_AI_TOOLS_DESKTOP | default(lookup('env', 'PIXI_AI_TOOLS_DESKTOP'), true)
+     | default(false, true) }}
+
+# Pinned so a redeploy installs the pixi it installed last time, and so a new
+# pixi can be tried on one workspace before it becomes everyone's. "latest"
+# restores the old behaviour of taking whatever is current at install time.
+# 0.78.0 is the version this component has been tested against.
+pixi_ai_tools_pixi_version: >-
+  {{ PIXI_AI_TOOLS_PIXI_VERSION | default(lookup('env', 'PIXI_AI_TOOLS_PIXI_VERSION'), true)
+     | default('0.78.0', true) }}
+
 pixi_ai_tools_home: /usr/local
 pixi_ai_tools_bin: /usr/local/bin/pixi
 pixi_ai_tools_runonce_dir: /etc/runonce.d
@@ -26,3 +49,34 @@ pixi_ai_tools_repo_url: https://github.com/Leiden-Cell-Observatory/AI_tools_pixi
 pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
 pixi_ai_tools_cache_dir: /opt/pixi-cache
 pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels
+pixi_ai_tools_kernel_wrapper: /usr/local/bin/ai-tools-kernel
+pixi_ai_tools_icon_dir: /usr/share/icons/hicolor
+# The noVNC/XFCE session behind JupyterLab's "Desktop" tile. Pinned for the same
+# reason as VirtualGL below: a redeploy should install what it installed last
+# time rather than whatever upstream has released since.
+pixi_ai_tools_rdp_version: "3.0.1"
+
+# VirtualGL is not in the Ubuntu archive, so it is fetched from the project's
+# own releases. Pinned by version and checksum so a redeploy of this component
+# installs what it installed last time; bump both together.
+pixi_ai_tools_virtualgl_version: "3.1.5"
+pixi_ai_tools_virtualgl_sha256: df3f7788ce41b182a47c0d298e5cd6d2d63579522cb41825970b7726e825485e
+pixi_ai_tools_virtualgl_deb: "virtualgl_{{ pixi_ai_tools_virtualgl_version }}_amd64.deb"
+# The line break sits inside the Jinja expression, where the folded-scalar
+# newline becomes an ignored space rather than a space in the URL.
+pixi_ai_tools_virtualgl_url: >-
+  https://github.com/VirtualGL/virtualgl/releases/download/{{
+  pixi_ai_tools_virtualgl_version }}/{{ pixi_ai_tools_virtualgl_deb }}
+
+# Tools whose interface is not napari. Anything not listed here gets a launcher
+# only if its environment registers a napari plugin, and is launched with
+# napari; cellpose has its own GUI and no plugin.
+pixi_ai_tools_gui_commands:
+  cellpose: python -m cellpose
+
+# Icon name per tool, from files/icons. Anything unlisted falls back to the
+# generic napari icon, which is the right picture for a napari plugin.
+pixi_ai_tools_icons_by_tool:
+  cellpose: pixi-cellpose
+  micro_sam: pixi-micro_sam
+  omero: pixi-omero

@@ -23,6 +23,22 @@
 - name: Deploy the shared tool checkout and package cache
   ansible.builtin.import_tasks: shared_env.yml
 
+# Before the desktop phase, whose napari probe calls ai-tools-has-gui.
+- name: Install the user-facing helper scripts
+  ansible.builtin.import_tasks: helpers.yml
+
+- name: Write the application menu entries and icons
+  ansible.builtin.import_tasks: launchers.yml
+
+- name: Locate the JupyterHub single-user venv
+  ansible.builtin.import_tasks: jupyter_venv.yml
+
+# Before the kernels, which are wrapped in the display helper it installs, and
+# before the JupyterHub phase, whose restart picks up the desktop extension.
+- name: Install the remote desktop for GUI tools
+  ansible.builtin.import_tasks: desktop.yml
+  when: pixi_ai_tools_desktop | bool
+
 - name: Register system-wide Jupyter kernels
   ansible.builtin.import_tasks: kernels.yml
 
