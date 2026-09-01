@@ -52,33 +52,42 @@
 # longer rewrites anything, but workspaces built before that fix still carry the
 # modifications, and would stay stuck without this.
 #
-# Only lock files are restored. They are generated artifacts, never hand-edited,
-# so discarding a local version loses nothing. Anything else a person changed in
-# the checkout is left alone and will still stop the clone task, which is what
-# force=no is for.
+# Only lock files are restored, and only where the tool's pixi.toml is itself
+# untouched. A lock on its own changes because pixi rewrote it; a lock next to a
+# modified manifest means somebody ran `pixi add` in the shared checkout to try a
+# dependency, and their lock is real work. Restoring it would silently undo that
+# and leave the manifest describing something the lock does not — which --locked
+# then refuses to install. Anything else a person changed is left alone and will
+# still stop the clone task, which is what force=no is for.
 - name: Check whether the shared checkout is already a git repository
   ansible.builtin.stat:
     path: "{{ pixi_ai_tools_shared_dir }}/.git"
   register: pixi_ai_tools_shared_git
 
 # noqa: command-instead-of-module — the git module manages a whole checkout;
-# it cannot restore a single pathspec, which is the entire point here.
-- name: Look for lock files rewritten by an older deploy  # noqa: command-instead-of-module
-  ansible.builtin.command:
-    cmd: git status --porcelain -- */pixi.lock
+# it cannot restore selected paths, which is the entire point here.
+- name: Restore lock files that pixi rewrote  # noqa: command-instead-of-module
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      restored=""
+      while read -r _ lock; do
+          [ -n "$lock" ] || continue
+          tool_dir=$(dirname "$lock")
+          # A modified manifest alongside it means this is someone's own work.
+          if [ -n "$(git status --porcelain -- "$tool_dir/pixi.toml")" ]; then
+              echo "keeping $lock: $tool_dir/pixi.toml is modified too" >&2
+              continue
+          fi
+          git checkout -- "$lock"
+          restored="${restored} ${lock}"
+      done < <(git status --porcelain -- '*/pixi.lock')
+      [ -z "${restored}" ] || echo "restored:${restored}"
+    executable: /bin/bash
     chdir: "{{ pixi_ai_tools_shared_dir }}"
-  register: pixi_ai_tools_dirty_locks
-  changed_when: false
+  register: pixi_ai_tools_restored_locks
   when: pixi_ai_tools_shared_git.stat.exists
-
-- name: Restore lock files rewritten by an older deploy  # noqa: command-instead-of-module
-  ansible.builtin.command:
-    cmd: git checkout -- */pixi.lock
-    chdir: "{{ pixi_ai_tools_shared_dir }}"
-  when:
-    - pixi_ai_tools_shared_git.stat.exists
-    - pixi_ai_tools_dirty_locks.stdout | default('') | length > 0
-  changed_when: true
+  changed_when: "'restored:' in pixi_ai_tools_restored_locks.stdout"
 
 - name: Clone AI_tools_pixi to the shared location
   ansible.builtin.git:
