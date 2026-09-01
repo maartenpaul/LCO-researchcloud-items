@@ -85,7 +85,7 @@ Declare these in step 3 of the component wizard. SRC hands each parameter to the
 |-----------|---------|-------------|
 | `PIXI_AI_TOOLS_VERSION` | `master` | Git branch or tag of AI_tools_pixi to deploy |
 | `PIXI_AI_TOOLS_PRELOAD` | `all` | Comma-separated tools to pre-install, or `all`. Only pre-installed tools get a shared kernel. |
-| `PIXI_AI_TOOLS_DESKTOP` | `false` | Install the remote desktop so GUI tools such as napari can be used. Adds ~200 packages and ~1 GB. |
+| `PIXI_AI_TOOLS_DESKTOP` | `false` | Install the remote desktop so GUI tools such as napari can be used. Adds ~200 packages and ~1 GB. Install-only — see below. |
 
 **Set `PIXI_AI_TOOLS_PRELOAD` to just the tools your course uses.** `all` pre-installs eight environments (~50 GB, a long deploy). Something like `cellpose,stardist,CAREamics` keeps the deploy short. This cost is paid once, at deploy time, before any student logs in — never on a student's first kernel click.
 
@@ -94,6 +94,8 @@ Declare these in step 3 of the component wizard. SRC hands each parameter to the
 Set `PIXI_AI_TOOLS_DESKTOP` to `true` and the workspace gets a **Desktop** tile in the JupyterLab launcher: an XFCE session served over noVNC by `jupyter-remote-desktop-proxy`, running inside the single-user server JupyterHub already spawns. It needs no extra port and no second login — the hub's authentication covers it.
 
 The desktop's application menu lists **JupyterLab** plus a `napari (<tool>)` entry per environment that has a napari plugin.
+
+The parameter is **install-only**. Setting it back to `false` on a workspace that already has the desktop skips the phase but does not undo it: XFCE, VirtualGL, the menu entries, the wrappers and the Desktop tile stay, and the ~1 GB is not reclaimed. The kernels do follow the parameter — `kernels.yml` keys the `xvfb-run` wrapper off the same variable and rewrites every kernelspec — so nothing breaks, it is only disk. To actually drop the desktop, redeploy the workspace from scratch with it off.
 
 ### Which tools get a launcher
 

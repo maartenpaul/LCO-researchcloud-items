@@ -20,6 +20,14 @@ pixi_ai_tools_preload: >-
 # Off by default: the desktop costs roughly 200 packages and about a gigabyte,
 # which is wasted on a workspace where nobody opens a GUI tool. Turn it on for
 # courses that use napari.
+#
+# Install-only. Setting this back to false on a workspace that was deployed with
+# it true only skips the desktop phase; it does not undo it. The kernels do
+# converge — kernels.yml keys the display wrapper off this same variable and
+# rewrites every kernel.json without it — so nothing breaks, but XFCE,
+# VirtualGL, the menu entries, the wrappers and the Desktop tile stay, and the
+# gigabyte is not reclaimed. To actually drop the desktop, redeploy the
+# workspace from scratch with it off.
 pixi_ai_tools_desktop: >-
   {{ PIXI_AI_TOOLS_DESKTOP | default(lookup('env', 'PIXI_AI_TOOLS_DESKTOP'), true)
      | default(false, true) }}
@@ -34,6 +42,11 @@ pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
 pixi_ai_tools_cache_dir: /opt/pixi-cache
 pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels
 pixi_ai_tools_kernel_wrapper: /usr/local/bin/ai-tools-kernel
+# The noVNC/XFCE session behind JupyterLab's "Desktop" tile. Pinned for the same
+# reason as VirtualGL below: a redeploy should install what it installed last
+# time rather than whatever upstream has released since.
+pixi_ai_tools_rdp_version: "3.0.1"
+
 # VirtualGL is not in the Ubuntu archive, so it is fetched from the project's
 # own releases. Pinned by version and checksum so a redeploy of this component
 # installs what it installed last time; bump both together.

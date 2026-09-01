@@ -13,7 +13,10 @@
 #   PIXI_AI_TOOLS_DESKTOP  — Install the remote desktop for GUI tools such as
 #                            napari (default: false). Adds roughly 200 packages
 #                            and about a gigabyte, so leave it off unless the
-#                            workspace needs a GUI.
+#                            workspace needs a GUI. Install-only: setting it
+#                            back to false skips the phase but does not remove
+#                            a desktop already installed — redeploy from
+#                            scratch for that.
 #
 # Uses the uusrc.general Ansible collection (see requirements.yml).
 

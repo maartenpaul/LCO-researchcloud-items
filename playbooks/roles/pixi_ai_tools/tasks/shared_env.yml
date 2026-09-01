@@ -149,10 +149,17 @@
 #
 # pixi prints the same output whether or not it did any work, so `changed` is
 # taken from conda-meta, whose contents change exactly when packages do.
+#
+# `set -e` is what makes the --locked failure above actually reach Ansible.
+# Without it the script's exit status is the trailing `if`, which is always 0:
+# a failed install would be reported as ok, and since nothing was installed
+# conda-meta would be unchanged in both samples, so it would also be reported
+# as unchanged. The deploy then carried on and kernels.yml registered a kernel
+# for an environment that does not exist.
 - name: Pre-install shared pixi environments
   ansible.builtin.shell:
     cmd: |
-      set -o pipefail
+      set -euo pipefail
       meta="{{ pixi_ai_tools_shared_dir }}/{{ item }}/.pixi/envs/default/conda-meta"
       before=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
       "{{ pixi_ai_tools_bin }}" install --locked \

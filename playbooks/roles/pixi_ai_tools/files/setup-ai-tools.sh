@@ -131,7 +131,19 @@ done
 # Drop any launcher whose environment is not built.
 for stale_desktop in "${DESKTOP_DIR}"/pixi-*.desktop "${HOME}"/Desktop/pixi-*.desktop; do
     [ -f "${stale_desktop}" ] || continue
-    stale_tool=$(basename "${stale_desktop}" .desktop)
+    stale_entry=$(basename "${stale_desktop}")
+    # The playbook writes its own pixi-* entries into /usr/share/applications:
+    # pixi-jupyterlab.desktop and one pixi-<tool>-napari.desktop per GUI tool.
+    # A user who copies one of those to ~/Desktop would otherwise lose it here,
+    # because neither "jupyterlab" nor "<tool>-napari" is a directory under
+    # SHARED_DIR, so the name test below reads them as stale. They are not ours
+    # to garbage-collect either — desktop.yml removes its own. Skipping anything
+    # with a system counterpart of the same name keeps the two in their own
+    # lanes without hardcoding the playbook's naming here.
+    if [ -e "/usr/share/applications/${stale_entry}" ]; then
+        continue
+    fi
+    stale_tool=${stale_entry%.desktop}
     stale_tool=${stale_tool#pixi-}
     stale_tool=${stale_tool%-terminal}
     if [ ! -d "${SHARED_DIR}/${stale_tool}/.pixi/envs/default" ]; then
@@ -193,8 +205,11 @@ fi
 
 # The system-wide entries in /usr/share/applications are written by Ansible and
 # shown in the applications menu, but a user who copies one to their desktop
-# hits the same trust prompt, so mark those the user already has.
-for desktop_file in "${HOME}"/Desktop/*.desktop; do
+# hits the same trust prompt, so mark those the user already has. Restricted to
+# the pixi-* prefix that both this script and the playbook use: every entry this
+# component owns matches it, and a glob over all of ~/Desktop would chmod +x and
+# rewrite the GIO metadata of launchers that have nothing to do with us.
+for desktop_file in "${HOME}"/Desktop/pixi-*.desktop; do
     [ -f "${desktop_file}" ] || continue
     chmod +x "${desktop_file}" 2>/dev/null || true
     trust_launcher "${desktop_file}"

@@ -223,10 +223,13 @@
 # that spawns it. On a workspace without JupyterHub (the SRC desktop flavour)
 # there is nothing to extend — that flavour has a desktop of its own, and the
 # menu entries and VirtualGL installed above are what this phase contributes.
+#
+# Pinned for the same reason VirtualGL is: an unpinned install lets an upstream
+# release change what a redeploy of this component puts on the workspace.
 - name: Install jupyter-remote-desktop-proxy into the JupyterHub single-user venv
   when: pixi_ai_tools_singleuser_launcher.matched > 0
   ansible.builtin.pip:
-    name: jupyter-remote-desktop-proxy
+    name: "jupyter-remote-desktop-proxy=={{ pixi_ai_tools_rdp_version }}"
     virtualenv: "{{ pixi_ai_tools_jupyterhub_venv }}"
 
 - name: Display desktop integration status
