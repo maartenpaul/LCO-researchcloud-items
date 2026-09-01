@@ -99,17 +99,17 @@ The parameter is **install-only**. Setting it back to `false` on a workspace tha
 
 ### Which tools get a launcher
 
-An environment gets a napari launcher only if it **registers a napari plugin**. Several environments pull napari in as a dependency with nothing that plugs into it — stardist was one — and a launcher that opens an empty viewer is only confusing.
+An environment gets a napari launcher only if it **registers a napari plugin**. Several environments pull napari in as a dependency with nothing that plugs into it, and a launcher that opens an empty viewer is only confusing.
 
 `ai-tools-has-gui <tool>` is the test, and it reads the installed distributions' entry points rather than starting napari to ask, so it costs milliseconds and can run at user login as well as at deploy time. `napari-console` and `napari-svg` ship with napari itself and so do not count. Both the system-wide menu entries (written by the playbook) and the per-user desktop icons (written by the runonce script) use it, so the two cannot disagree.
 
-It is self-correcting: add a plugin upstream — `pixi add stardist-napari` — and the launcher appears on the next deploy with nothing to change in this role. Tools whose GUI is not napari, such as cellpose, are listed explicitly in `setup-ai-tools.sh`.
+It is self-correcting, and stardist is the worked example: it had no plugin, `stardist-napari` was added to its `pixi.toml` upstream, and the launcher appeared on the next deploy with nothing to change in this role. Tools whose GUI is not napari, such as cellpose, are listed explicitly in `setup-ai-tools.sh`.
 
 The deploy log prints what it found:
 
 ```
 CAREamics     -> careamics_napari,napari_metadata,ome_types
-stardist      -> (no napari plugin)
+stardist      -> stardist_napari
 ```
 
 ### JupyterLab from the desktop

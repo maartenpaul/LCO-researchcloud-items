@@ -3,8 +3,8 @@
 #
 # Exits 0 and prints the plugin names if it does, exits 1 otherwise. Used to
 # decide which tools deserve a "napari (<tool>)" launcher: several environments
-# pull napari in as a dependency without anything that drives it — stardist was
-# one — and a launcher that opens an empty viewer is only confusing.
+# pull napari in as a dependency without anything that drives it, and a launcher
+# that opens an empty viewer is only confusing.
 #
 # The test reads the installed distributions' entry points rather than starting
 # napari to ask it. Same answer, but in milliseconds rather than seconds, which

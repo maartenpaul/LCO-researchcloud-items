@@ -80,3 +80,4 @@ pixi_ai_tools_icons_by_tool:
   cellpose: pixi-cellpose
   micro_sam: pixi-micro_sam
   omero: pixi-omero
+  stardist: pixi-stardist
