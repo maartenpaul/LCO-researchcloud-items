@@ -1,0 +1,100 @@
+---
+# GPU-accelerated OpenGL, and a display for Qt inside notebook kernels.
+#
+# Neither belongs to the remote-desktop phase, though both started there. A
+# workspace can have a desktop this component did not install — the SRC desktop
+# flavour brings its own — and tying these to our noVNC desktop left exactly
+# those workspaces rendering napari on llvmpipe with an A10 sitting idle, and
+# unable to open a viewer in a notebook at all.
+#
+# Skipped entirely when no preloaded environment has a GUI, so a workspace that
+# only runs headless analysis pays nothing for them.
+
+- name: Decide whether GUI rendering support is needed
+  ansible.builtin.set_fact:
+    pixi_ai_tools_want_render: "{{ pixi_ai_tools_gui_tools | default([]) | length > 0 }}"
+
+- name: Check for the NVIDIA device node used by the VirtualGL EGL back end
+  ansible.builtin.stat:
+    path: /dev/nvidiactl
+  register: pixi_ai_tools_nvidiactl
+
+- name: Install GUI rendering support
+  when: pixi_ai_tools_want_render | bool
+  block:
+    # Qt needs a display even when nothing is shown on screen, so without this
+    # "napari.Viewer()" in a notebook takes the kernel down with it. xvfb gives
+    # each kernel a private X server, torn down with it.
+    - name: Install Xvfb so Qt works inside notebook kernels
+      ansible.builtin.apt:
+        name: xvfb
+        state: present
+        update_cache: true
+
+    - name: Install the kernel display wrapper
+      ansible.builtin.copy:
+        src: ai-tools-kernel
+        dest: "{{ pixi_ai_tools_kernel_wrapper }}"
+        mode: "0755"
+        owner: root
+        group: root
+
+# vglrun's EGL back end talks to /dev/nvidiactl, which the driver exposes
+# world-readable, so no group membership is needed. Without an NVIDIA device
+# ai-tools-gui and ai-tools-kernel both fall back to software rendering.
+- name: Install VirtualGL for GPU-accelerated OpenGL
+  when:
+    - pixi_ai_tools_want_render | bool
+    - pixi_ai_tools_nvidiactl.stat.exists
+  block:
+    # Not packaged by Ubuntu, so it comes from the project's own release. Pinned by
+    # version and checksum: an unpinned download would let an upstream release
+    # change what a redeploy of this component installs.
+    #
+    # The download is guarded on the installed version because the package file is
+    # removed afterwards — without the guard every redeploy would fetch the same
+    # 20 MB again and report changed.
+    - name: Check which VirtualGL version is installed
+      ansible.builtin.command: dpkg-query -W -f=${Version} virtualgl
+      register: pixi_ai_tools_virtualgl_installed
+      changed_when: false
+      failed_when: false
+
+    # The package version carries a build date the release tag does not
+    # ("3.1.5-20260814"), so compare only the part before the hyphen.
+    - name: Install VirtualGL from the pinned release
+      when: >-
+        pixi_ai_tools_virtualgl_installed.stdout | split('-') | first
+        != pixi_ai_tools_virtualgl_version
+      block:
+        - name: Download the VirtualGL package
+          ansible.builtin.get_url:
+            url: "{{ pixi_ai_tools_virtualgl_url }}"
+            dest: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+            checksum: "sha256:{{ pixi_ai_tools_virtualgl_sha256 }}"
+            mode: "0644"
+
+        - name: Install VirtualGL
+          ansible.builtin.apt:
+            deb: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+
+      always:
+        - name: Remove the VirtualGL package file
+          ansible.builtin.file:
+            path: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+            state: absent
+
+- name: Report the rendering path GUI tools will take
+  ansible.builtin.debug:
+    msg: >-
+      {% if not pixi_ai_tools_want_render | bool %}
+      No preloaded environment registers a napari plugin, so no rendering
+      support was installed.
+      {% elif pixi_ai_tools_nvidiactl.stat.exists %}
+      VirtualGL will render OpenGL on the GPU (vglrun -d egl); notebook kernels
+      get a private display via Xvfb.
+      {% else %}
+      No /dev/nvidiactl — GUI tools will render OpenGL in software (llvmpipe):
+      fine for 2D, slow for volume rendering. Notebook kernels still get a
+      display via Xvfb.
+      {% endif %}

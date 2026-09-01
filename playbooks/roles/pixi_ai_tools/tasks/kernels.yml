@@ -6,15 +6,21 @@
     mode: "0755"
   loop: "{{ pixi_ai_tools_preload_tools }}"
 
-# With the desktop installed, kernels run under ai-tools-kernel, which gives
-# each one a private X display. Qt needs a display even when nothing is shown,
-# so without this "napari.Viewer()" in a notebook kills the kernel with
-# 'could not connect to display'. Without the desktop there is no Xvfb to wrap
-# with, and the kernels are launched directly as before.
+# Kernels run under ai-tools-kernel where it exists, which gives each one a
+# private X display. Qt needs a display even when nothing is shown, so without
+# it "napari.Viewer()" in a notebook kills the kernel with 'could not connect
+# to display'. The condition is whether render.yml installed the wrapper, not
+# whether the remote desktop was installed: a workspace with its own desktop
+# gets the wrapper too, and one with no GUI environments gets neither.
+- name: Check whether the kernel display wrapper is installed
+  ansible.builtin.stat:
+    path: "{{ pixi_ai_tools_kernel_wrapper }}"
+  register: pixi_ai_tools_wrapper
+
 - name: Decide whether kernels run under the display wrapper
   ansible.builtin.set_fact:
     pixi_ai_tools_kernel_prefix: >-
-      {{ [pixi_ai_tools_kernel_wrapper] if pixi_ai_tools_desktop | bool else [] }}
+      {{ [pixi_ai_tools_kernel_wrapper] if pixi_ai_tools_wrapper.stat.exists else [] }}
 
 # System-wide kernels are visible to every user at first login, with no
 # per-user registration step. --frozen means "use the lock file as-is":

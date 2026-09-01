@@ -9,10 +9,10 @@
 # took ~2700 ms over ssh -X against ~6 ms here, because the framebuffer now sits
 # next to the application and only pixels cross the network.
 #
-# VirtualGL then puts OpenGL back on the GPU. TigerVNC renders GL with llvmpipe
-# (software), which is past 60 fps for 2D but not for volume rendering: the same
-# 256^3 MIP rotation measured 114 ms/frame on llvmpipe and 16 ms/frame through
-# "vglrun -d egl". ai-tools-gui applies vglrun, so the menu entries get the GPU.
+# GPU rendering and the notebook display wrapper are deliberately NOT part of
+# this phase — see render.yml. Both are useful on any workspace that has a
+# desktop, including one that brought its own, and keeping them here left
+# desktop-flavour workspaces rendering napari in software with an A10 idle.
 #
 # This phase is off by default (PIXI_AI_TOOLS_DESKTOP) — it adds roughly 200
 # packages and about a gigabyte, which is wasted on a workspace where nobody
@@ -29,81 +29,14 @@
       - xfce4-session
       - xfce4-settings
       - xorg
-      - xvfb
       - xubuntu-icon-theme
     state: present
     update_cache: true
 
-# Not packaged by Ubuntu, so it comes from the project's own release. Pinned by
-# version and checksum: an unpinned download would let an upstream release
-# change what a redeploy of this component installs.
-#
-# The download is guarded on the installed version because the package file is
-# removed afterwards — without the guard every redeploy would fetch the same
-# 20 MB again and report changed.
-- name: Check which VirtualGL version is installed
-  ansible.builtin.command: dpkg-query -W -f=${Version} virtualgl
-  register: pixi_ai_tools_virtualgl_installed
-  changed_when: false
-  failed_when: false
-
-# The package version carries a build date the release tag does not
-# ("3.1.5-20260814"), so compare only the part before the hyphen.
-- name: Install VirtualGL from the pinned release
-  when: >-
-    pixi_ai_tools_virtualgl_installed.stdout | split('-') | first
-    != pixi_ai_tools_virtualgl_version
-  block:
-    - name: Download the VirtualGL package
-      ansible.builtin.get_url:
-        url: "{{ pixi_ai_tools_virtualgl_url }}"
-        dest: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
-        checksum: "sha256:{{ pixi_ai_tools_virtualgl_sha256 }}"
-        mode: "0644"
-
-    - name: Install VirtualGL
-      ansible.builtin.apt:
-        deb: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
-
-  always:
-    - name: Remove the VirtualGL package file
-      ansible.builtin.file:
-        path: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
-        state: absent
-
-# vglrun's EGL back end talks to /dev/nvidiactl, which the driver already
-# exposes world-readable, so no group membership is needed. Report it rather
-# than assume it: without an NVIDIA device ai-tools-gui falls back to software
-# rendering, and that is worth seeing in the deploy log.
-- name: Check for the NVIDIA device node used by the VirtualGL EGL back end
-  ansible.builtin.stat:
-    path: /dev/nvidiactl
-  register: pixi_ai_tools_nvidiactl
-
-- name: Report the OpenGL path GUI tools will take
-  ansible.builtin.debug:
-    msg: >-
-      {% if pixi_ai_tools_nvidiactl.stat.exists %}
-      VirtualGL will render OpenGL on the GPU (vglrun -d egl).
-      {% else %}
-      No /dev/nvidiactl — GUI tools will render OpenGL in software (llvmpipe).
-      Fine for 2D, slow for volume rendering.
-      {% endif %}
-
-# Kernels are wrapped in this so that Qt works inside a notebook — see
-# kernels.yml, and the script itself for why "offscreen" is not an alternative.
-- name: Install the kernel display wrapper
-  ansible.builtin.copy:
-    src: ai-tools-kernel
-    dest: "{{ pixi_ai_tools_kernel_wrapper }}"
-    mode: "0755"
-    owner: root
-    group: root
-
 # The proxy is an extension of the single-user server, so it belongs in the venv
 # that spawns it. On a workspace without JupyterHub (the SRC desktop flavour)
-# there is nothing to extend — that flavour has a desktop of its own, and
-# VirtualGL is what this phase contributes to it.
+# there is nothing to extend — that flavour has a desktop of its own, and this
+# phase contributes nothing to it beyond what render.yml already installed.
 #
 # Pinned for the same reason VirtualGL is: an unpinned install lets an upstream
 # release change what a redeploy of this component puts on the workspace.

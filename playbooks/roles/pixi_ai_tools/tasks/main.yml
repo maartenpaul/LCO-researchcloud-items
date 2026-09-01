@@ -33,8 +33,11 @@
 - name: Locate the JupyterHub single-user venv
   ansible.builtin.import_tasks: jupyter_venv.yml
 
-# Before the kernels, which are wrapped in the display helper it installs, and
-# before the JupyterHub phase, whose restart picks up the desktop extension.
+# Before the kernels, which are wrapped in the display helper it installs.
+- name: Install GPU rendering and the notebook display wrapper
+  ansible.builtin.import_tasks: render.yml
+
+# Before the JupyterHub phase, whose restart picks up the desktop extension.
 - name: Install the remote desktop for GUI tools
   ansible.builtin.import_tasks: desktop.yml
   when: pixi_ai_tools_desktop | bool
