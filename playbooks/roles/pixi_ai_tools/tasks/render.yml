@@ -10,9 +10,12 @@
 # Skipped entirely when no preloaded environment has a GUI, so a workspace that
 # only runs headless analysis pays nothing for them.
 
+# Deliberately no `| default([])`: if launchers.yml has not run, or the fact is
+# renamed again, this must fail rather than quietly decide that no environment
+# has a GUI and skip the whole phase — which is precisely what happened once.
 - name: Decide whether GUI rendering support is needed
   ansible.builtin.set_fact:
-    pixi_ai_tools_want_render: "{{ pixi_ai_tools_gui_tools | default([]) | length > 0 }}"
+    pixi_ai_tools_want_render: "{{ pixi_ai_tools_launchers | length > 0 }}"
 
 - name: Check for the NVIDIA device node used by the VirtualGL EGL back end
   ansible.builtin.stat:
