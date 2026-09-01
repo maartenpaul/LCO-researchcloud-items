@@ -14,12 +14,44 @@
     name: acl
     state: present
 
-- name: Discover the primary group shared by workspace users
+# Which group should own the shared cache — the one every member of the
+# workspace is in.
+#
+# This used to take the most common *primary* group of the /home users. That
+# holds on a JupyterHub workspace, where everyone's primary group is the SRC
+# collaborative organisation, but not on a desktop-flavour one, where each user
+# gets a private primary group of their own and the CO is a secondary group.
+# There the count is an n-way tie and the winner is whichever user sorted first,
+# so the cache ended up owned by one student's private group and nobody else
+# could write to it — which silently breaks `ai-tools fork`, the one route users
+# have for installing a package of their own.
+#
+# So: look at every group these users belong to, and prefer the SRC CO group,
+# which is named rsc_co_<id>. Counting alone is not enough, since `sudoers` and
+# `fuse` are just as universal and are not what we want owning a package cache.
+- name: Discover the group shared by workspace users
   ansible.builtin.shell:
-    cmd: >-
-      set -o pipefail;
-      getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\//
-      { print $4 }' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}'
+    cmd: |
+      set -o pipefail
+      users=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\// { print $1 }')
+      [ -n "$users" ] || exit 0
+      memberships() {
+          for u in $users; do
+              # A user's own private group says nothing about who they share with.
+              id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -vx "$u"
+          done
+      }
+      co=$(memberships | grep -E '^rsc_co_[0-9]+$' | sort | uniq -c | sort -rn |
+           head -1 | awk '{print $2}')
+      if [ -n "$co" ]; then
+          echo "$co"
+          exit 0
+      fi
+      # Not an SRC workspace: fall back to the most widely shared non-system
+      # group, skipping the ones every Ubuntu account happens to be in.
+      memberships |
+          grep -vxE 'sudo|sudoers|users|adm|cdrom|dip|plugdev|lxd|fuse|video|render' |
+          sort | uniq -c | sort -rn | head -1 | awk '{print $2}'
     executable: /bin/bash
   register: pixi_ai_tools_co_gid_raw
   changed_when: false
@@ -27,6 +59,17 @@
 - name: Set workspace group fact
   ansible.builtin.set_fact:
     pixi_ai_tools_workspace_gid: "{{ pixi_ai_tools_co_gid_raw.stdout | trim }}"
+
+- name: Report the group that will own the shared cache
+  ansible.builtin.debug:
+    msg: >-
+      {% if pixi_ai_tools_workspace_gid | length > 0 %}
+      Shared cache group: {{ pixi_ai_tools_workspace_gid }}. Users in it can
+      `ai-tools fork` a tool and add packages to their own copy.
+      {% else %}
+      No shared group found for the workspace users — the pixi cache will be
+      root-owned and `ai-tools fork` will fail for everyone but root.
+      {% endif %}
 
 - name: Create shared pixi cache directory
   ansible.builtin.file:
