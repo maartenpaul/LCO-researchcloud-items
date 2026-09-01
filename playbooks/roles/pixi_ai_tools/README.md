@@ -182,16 +182,46 @@ Disk: size the VM for the shared install (~50 GB for all eight environments) plu
 4. Add the plugin to a **catalog item** alongside SRC-OS and SRC-External
 5. For JupyterLab workspaces, also include the Jupyter component — kernel integration is automatic
 
-### Running manually (for testing)
+### Running it by hand on a workspace
+
+Reapplying the component to a running workspace is not part of normal use — SRC
+deploys it — but it is how the component gets tested, and how a workspace picks
+up a change without being rebuilt. Three things are needed that are easy to miss:
 
 ```bash
-ansible-galaxy collection install -r playbooks/requirements.yml
-sudo ansible-playbook playbooks/pixi-ai-tools.yml                                   # preloads everything
-sudo ansible-playbook playbooks/pixi-ai-tools.yml -e PIXI_AI_TOOLS_PRELOAD=cellpose,stardist
-sudo ansible-playbook playbooks/pixi-ai-tools.yml -e PIXI_AI_TOOLS_DESKTOP=true          # with the GUI desktop
+# 1. The component is not on the workspace; clone the branch you want to test.
+git clone -b main https://github.com/maartenpaul/LCO-researchcloud-items.git ~/lco
+cd ~/lco
+
+# 2. uusrc.general needs jmespath in the venv Ansible actually runs from.
+sudo /etc/src/venv/src-venv/bin/pip install jmespath
+
+# 3. Run it. The venv path must be spelled out — under sudo, PATH is reset to
+#    secure_path and a bare `ansible-playbook` is not found — and VIRTUAL_ENV
+#    must be set, or uusrc.general looks for a venv that does not exist,
+#    concludes Ansible is on the system interpreter, and dies in json_query.
+sudo env VIRTUAL_ENV=/etc/src/venv/src-venv \
+  /etc/src/venv/src-venv/bin/ansible-playbook playbooks/pixi-ai-tools.yml \
+  -e PIXI_AI_TOOLS_DESKTOP=true
 ```
 
-Passing parameters as extra-vars exercises the same code path SRC uses. Note that `-e key=value` splits on whitespace, so a value containing spaces needs the JSON form — `-e '{"PIXI_AI_TOOLS_PRELOAD": "cellpose, stardist"}'` — which is also how SRC passes them. The equivalent environment variables still work, but testing only that way will not catch a parameter the playbook fails to read as a variable.
+The venv is named `src-venv` on the workspaces this has been tested on; check
+`/etc/src/venv/` if the path does not exist.
+
+Passing parameters as extra-vars exercises the same code path SRC uses. Note that
+`-e key=value` splits on whitespace, so a value containing spaces needs the JSON
+form — `-e '{"PIXI_AI_TOOLS_PRELOAD": "cellpose, stardist"}'` — which is also how
+SRC passes them. The equivalent environment variables still work, but testing only
+that way will not catch a parameter the playbook fails to read as a variable.
+
+Re-running is also the update path: it restores lock files pixi rewrote, pulls
+`PIXI_AI_TOOLS_VERSION`, reinstalls only the environments whose lock changed,
+rewrites the kernelspecs and menu entries, and restarts JupyterHub.
+
+**It will refuse to run if somebody has edited the shared checkout.** `pixi add`
+in `/opt/AI_tools_pixi` changes a tracked `pixi.toml`, and the clone step will not
+discard that. Push the change upstream to AI_tools_pixi, or `git checkout` it away,
+and re-run.
 
 ## Available environments
 
