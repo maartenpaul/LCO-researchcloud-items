@@ -90,14 +90,6 @@
       Fine for 2D, slow for volume rendering.
       {% endif %}
 
-- name: Install the ai-tools-gui launcher
-  ansible.builtin.copy:
-    src: ai-tools-gui
-    dest: /usr/local/bin/ai-tools-gui
-    mode: "0755"
-    owner: root
-    group: root
-
 # Kernels are wrapped in this so that Qt works inside a notebook — see
 # kernels.yml, and the script itself for why "offscreen" is not an alternative.
 - name: Install the kernel display wrapper
@@ -108,121 +100,10 @@
     owner: root
     group: root
 
-# Inside the desktop there is otherwise no way to start Lab: the desktop
-# flavour has no Lab at all, and on a JupyterHub workspace the browser Lab is
-# outside the session. The launcher picks its own host and always roots Lab at
-# $HOME rather than the read-only shared checkout.
-- name: Install the JupyterLab launcher
-  ansible.builtin.copy:
-    src: ai-tools-lab
-    dest: /usr/local/bin/ai-tools-lab
-    mode: "0755"
-    owner: root
-    group: root
-
-- name: Add an application menu entry for JupyterLab
-  ansible.builtin.copy:
-    dest: /usr/share/applications/pixi-jupyterlab.desktop
-    mode: "0644"
-    content: |
-      [Desktop Entry]
-      Type=Application
-      Version=1.0
-      Name=JupyterLab
-      Comment=JupyterLab with the shared Pixi kernels, opened in your home directory
-      Exec=ai-tools-lab
-      Icon=applications-science
-      Terminal=true
-      Categories=Development;IDE;
-
-# A menu entry is only worth having where napari has something to do. Several
-# environments install napari as a dependency without any plugin that drives it
-# — stardist was one — and an entry that opens an empty viewer is just noise.
-#
-# ai-tools-has-gui answers "does this environment register a napari plugin",
-# reading the installed distributions rather than keeping a hand-written list
-# that would drift from the upstream repo. It is self-correcting: add a plugin
-# upstream (say `pixi add stardist-napari`) and the entry appears on the next
-# deploy with nothing to change here. The same helper drives the per-user
-# launchers in setup-ai-tools.sh, so the two cannot disagree.
-- name: Find shared environments that register a napari plugin
-  ansible.builtin.command:
-    cmd: /usr/local/bin/ai-tools-has-gui {{ item | quote }} {{ pixi_ai_tools_shared_dir | quote }}
-  loop: "{{ pixi_ai_tools_preload_tools }}"
-  register: pixi_ai_tools_napari_probe
-  changed_when: false
-  # rc 0 means the environment has a plugin, rc 1 means it has none. Anything
-  # else is the probe itself failing — a blanket failed_when:false once turned a
-  # missing helper into "no tool has a GUI" and silently removed every entry.
-  failed_when: pixi_ai_tools_napari_probe.rc not in [0, 1]
-
-- name: Report what the napari plugin probe found
-  ansible.builtin.debug:
-    msg: >-
-      {{ pixi_ai_tools_napari_probe.results | map(attribute='item')
-         | zip(pixi_ai_tools_napari_probe.results | map(attribute='stdout')
-         | map('trim') | map('default', '(no napari plugin)', true))
-         | map('join', ' -> ') | list }}
-
-- name: Build the list of tools with a GUI
-  ansible.builtin.set_fact:
-    pixi_ai_tools_gui_tools: >-
-      {{ pixi_ai_tools_napari_probe.results
-         | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
-
-- name: Add an application menu entry per GUI tool
-  ansible.builtin.copy:
-    dest: "/usr/share/applications/pixi-{{ item }}-napari.desktop"
-    mode: "0644"
-    content: |
-      [Desktop Entry]
-      Type=Application
-      Version=1.0
-      Name=napari ({{ item }})
-      Comment=napari from the shared {{ item }} Pixi environment, GPU accelerated
-      Exec=ai-tools-gui {{ item }} napari
-      Icon=applications-science
-      Terminal=false
-      Categories=Science;Biology;ImageProcessing;
-  loop: "{{ pixi_ai_tools_gui_tools }}"
-
-# Remove entries for tools that are no longer preloaded, so a workspace
-# redeployed with a narrower PIXI_AI_TOOLS_PRELOAD does not keep menu items
-# that launch nothing.
-#
-# The wanted filenames are built here rather than in the `when` below, so that
-# the conditional is a plain string comparison with no regex in it. A bare
-# `when` is templated once more than an expression inside {{ }} and needs its
-# backslashes doubled; getting that wrong silently strips the name to nothing,
-# nothing matches, and the task deletes every entry including the ones just
-# written. Inside {{ }}, as here, a single backslash is the correct form —
-# "\\1" would substitute a literal backslash-one.
-- name: Build the menu entry filenames the GUI tools should have
-  ansible.builtin.set_fact:
-    pixi_ai_tools_gui_entries: >-
-      {{ pixi_ai_tools_gui_tools
-         | map('regex_replace', '^(.*)$', 'pixi-\1-napari.desktop') | list }}
-
-- name: Find existing GUI menu entries
-  ansible.builtin.find:
-    paths: /usr/share/applications
-    patterns: "pixi-*-napari.desktop"
-    file_type: file
-  register: pixi_ai_tools_existing_entries
-
-- name: Remove menu entries for tools that are no longer available
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ pixi_ai_tools_existing_entries.files }}"
-  loop_control:
-    label: "{{ item.path | basename }}"
-  when: item.path | basename not in pixi_ai_tools_gui_entries
-
 # The proxy is an extension of the single-user server, so it belongs in the venv
 # that spawns it. On a workspace without JupyterHub (the SRC desktop flavour)
-# there is nothing to extend — that flavour has a desktop of its own, and the
-# menu entries and VirtualGL installed above are what this phase contributes.
+# there is nothing to extend — that flavour has a desktop of its own, and
+# VirtualGL is what this phase contributes to it.
 #
 # Pinned for the same reason VirtualGL is: an unpinned install lets an upstream
 # release change what a redeploy of this component puts on the workspace.
@@ -242,5 +123,3 @@
       No JupyterHub on this workspace, so no Desktop tile was added; use the
       workspace's own desktop.
       {% endif %}
-      GUI menu entries: {{ pixi_ai_tools_gui_tools | join(', ') | default('(none)', true) }}.
-      From a terminal: ai-tools-gui <tool> napari.

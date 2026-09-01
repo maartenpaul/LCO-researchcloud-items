@@ -1,0 +1,124 @@
+---
+# Application menu entries and their icons, written system-wide so every user
+# gets them without per-user setup.
+#
+# These deliberately do NOT belong to the desktop phase. A workspace can have a
+# desktop without this component installing one — the SRC desktop flavour brings
+# its own — and it would be absurd to install XFCE, TigerVNC and VirtualGL just
+# to get menu icons. The desktop phase adds the remote desktop; this adds the
+# things to launch in whatever desktop exists.
+#
+# The per-user runonce script used to write its own copies of these into
+# ~/.local/share/applications from a hardcoded list. Both directories feed the
+# XDG menu, so every tool appeared twice under two different names. The runonce
+# script now only copies these onto the user's desktop and marks them trusted.
+
+- name: Install the application icons
+  ansible.builtin.copy:
+    src: icons/hicolor/
+    dest: "{{ pixi_ai_tools_icon_dir }}/"
+    mode: "0644"
+    directory_mode: "0755"
+    owner: root
+    group: root
+  notify: Refresh the icon theme cache
+
+# A napari launcher is only worth having where napari has something to do —
+# see ai-tools-has-gui. rc 0 means the environment registers a plugin, rc 1
+# means it does not; anything else is the probe itself failing and must not be
+# read as "no tool has a GUI", which would remove every entry.
+- name: Find shared environments that register a napari plugin
+  ansible.builtin.command:
+    cmd: /usr/local/bin/ai-tools-has-gui {{ item | quote }} {{ pixi_ai_tools_shared_dir | quote }}
+  loop: "{{ pixi_ai_tools_preload_tools }}"
+  register: pixi_ai_tools_napari_probe
+  changed_when: false
+  failed_when: pixi_ai_tools_napari_probe.rc not in [0, 1]
+
+- name: Report what the napari plugin probe found
+  ansible.builtin.debug:
+    msg: >-
+      {{ pixi_ai_tools_napari_probe.results | map(attribute='item')
+         | zip(pixi_ai_tools_napari_probe.results | map(attribute='stdout')
+         | map('trim') | map('default', '(no napari plugin)', true))
+         | map('join', ' -> ') | list }}
+
+# Two kinds of launcher: environments driving napari, and the few whose GUI is
+# something else entirely (pixi_ai_tools_gui_commands). A tool named in that
+# map gets a launcher whether or not it has a napari plugin — cellpose has its
+# own interface and no plugin, and would otherwise be dropped.
+- name: Build the launcher list
+  ansible.builtin.set_fact:
+    pixi_ai_tools_launchers: >-
+      {{ ((pixi_ai_tools_napari_probe.results | selectattr('rc', 'equalto', 0)
+           | map(attribute='item') | list)
+          + (pixi_ai_tools_preload_tools | select('in', pixi_ai_tools_gui_commands) | list))
+         | unique | sort }}
+
+- name: Write a menu entry per GUI tool
+  ansible.builtin.copy:
+    dest: "/usr/share/applications/pixi-{{ item }}.desktop"
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Version=1.0
+      Name={{ item }}
+      Comment=Launch {{ item }} from its shared Pixi environment
+      Exec=ai-tools-gui {{ item }} {{ pixi_ai_tools_gui_commands[item] | default('napari', true) }}
+      Icon={{ pixi_ai_tools_icons_by_tool[item] | default('pixi-napari', true) }}
+      Terminal=false
+      Categories=Science;Biology;ImageProcessing;
+      StartupNotify=true
+  loop: "{{ pixi_ai_tools_launchers }}"
+
+- name: Add an application menu entry for JupyterLab
+  ansible.builtin.copy:
+    dest: /usr/share/applications/pixi-jupyterlab.desktop
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Version=1.0
+      Name=JupyterLab
+      Comment=JupyterLab with the shared Pixi kernels, opened in your home directory
+      Exec=ai-tools-lab
+      Icon=pixi-jupyter
+      Terminal=true
+      Categories=Development;IDE;
+      StartupNotify=true
+
+# Entries left by a workspace redeployed with a narrower PIXI_AI_TOOLS_PRELOAD,
+# or by the earlier naming (pixi-<tool>-napari.desktop), or for a tool that has
+# since lost its GUI. The wanted names are built here so the condition below is
+# a plain comparison: a bare `when` is templated once more than an expression
+# inside {{ }}, and a regex backreference that loses its backslash there matches
+# nothing and deletes everything.
+- name: Build the set of menu entry filenames that should exist
+  ansible.builtin.set_fact:
+    pixi_ai_tools_wanted_entries: >-
+      {{ (pixi_ai_tools_launchers
+          | map('regex_replace', '^(.*)$', 'pixi-\1.desktop') | list)
+         + ['pixi-jupyterlab.desktop'] }}
+
+- name: Find existing menu entries
+  ansible.builtin.find:
+    paths: /usr/share/applications
+    patterns: "pixi-*.desktop"
+    file_type: file
+  register: pixi_ai_tools_existing_entries
+
+- name: Remove menu entries that should no longer exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ pixi_ai_tools_existing_entries.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: item.path | basename not in pixi_ai_tools_wanted_entries
+
+- name: Report the launchers
+  ansible.builtin.debug:
+    msg: >-
+      Menu entries: {{ pixi_ai_tools_launchers | join(', ') | default('(none)', true) }}, JupyterLab.
+      From a terminal: ai-tools-gui <tool> napari.

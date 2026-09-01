@@ -70,29 +70,18 @@ fi
 DESKTOP_DIR="${HOME}/.local/share/applications"
 mkdir -p "${DESKTOP_DIR}"
 
-# Tools whose GUI is not napari. Everything else is decided by asking whether
-# the environment registers a napari plugin: a hand-written list went stale as
-# soon as the upstream repository changed, and it used to give stardist a napari
-# launcher even though nothing in that environment plugs into napari, so the
-# icon opened an empty viewer. ai-tools-has-gui is the same test the playbook
-# uses for the system-wide menu entries, so the two cannot disagree.
-declare -A GUI_COMMANDS
-GUI_COMMANDS[cellpose]="python -m cellpose"
-
-HAS_GUI="/usr/local/bin/ai-tools-has-gui"
-
+# The GUI launchers themselves are written system-wide by the playbook, into
+# /usr/share/applications, so they are identical for every user and appear in
+# the applications menu without any per-user step. This script used to write
+# its own copies here from a hardcoded list; both directories feed the XDG
+# menu, so every tool showed up twice under two different names. What is left
+# per-user is the terminal launchers, which point at each environment, and
+# copying the system launchers onto the desktop.
 for tool_dir in "${SHARED_DIR}"/*/; do
     [ -f "${tool_dir}pixi.toml" ] || continue
     # Only advertise environments that were actually pre-installed
     [ -d "${tool_dir}.pixi/envs/default" ] || continue
     tool_name=$(basename "${tool_dir}")
-
-    if [[ ! -v "GUI_COMMANDS[${tool_name}]" ]] && [ -x "${HAS_GUI}" ]; then
-        if plugins=$("${HAS_GUI}" "${tool_name}" "${SHARED_DIR}"); then
-            echo "${tool_name} provides napari plugin(s): ${plugins}"
-            GUI_COMMANDS[${tool_name}]="napari"
-        fi
-    fi
 
     cat > "${DESKTOP_DIR}/pixi-${tool_name}-terminal.desktop" << DESKTOP_TERM
 [Desktop Entry]
@@ -105,61 +94,27 @@ Categories=Development;IDE;
 Icon=utilities-terminal
 StartupNotify=true
 DESKTOP_TERM
-
-    if [[ -v "GUI_COMMANDS[${tool_name}]" ]]; then
-        echo "Creating desktop launcher for ${tool_name}..."
-        cat > "${DESKTOP_DIR}/pixi-${tool_name}.desktop" << DESKTOP_GUI
-[Desktop Entry]
-Type=Application
-Name=${tool_name} (Pixi)
-Comment=Launch the ${tool_name} graphical interface
-Exec=${PIXI_BIN} run --frozen --manifest-path ${tool_dir}pixi.toml ${GUI_COMMANDS[${tool_name}]}
-Terminal=false
-Categories=Science;Biology;ImageProcessing;
-Icon=applications-science
-StartupNotify=true
-DESKTOP_GUI
-    fi
 done
 
-# Launchers written by an earlier deploy survive in the user's home directory
-# even after the workspace is redeployed with a narrower PIXI_AI_TOOLS_PRELOAD.
-# The loop above only creates launchers for environments that are built, but it
-# never removes the ones that are now stale — and a stale launcher does not just
-# do nothing, it fails: `pixi run` on an unbuilt environment tries to create
-# .pixi/ inside the read-only shared checkout and dies with "Permission denied".
-# Drop any launcher whose environment is not built.
-for stale_desktop in "${DESKTOP_DIR}"/pixi-*.desktop "${HOME}"/Desktop/pixi-*.desktop; do
+# Remove the per-user GUI launchers written by earlier versions of this script.
+# They duplicate the system-wide ones, and some of them — stardist, before the
+# napari plugin test existed — opened an empty viewer.
+for obsolete in "${DESKTOP_DIR}"/pixi-*.desktop; do
+    [ -f "${obsolete}" ] || continue
+    case "${obsolete}" in *-terminal.desktop) continue ;; esac
+    echo "Removing per-user launcher superseded by the system-wide one: $(basename "${obsolete}")"
+    rm -f "${obsolete}"
+done
+
+# Terminal launchers for environments that are no longer built. A stale one
+# does not merely do nothing: `pixi run` on an unbuilt environment tries to
+# create .pixi/ inside the read-only shared checkout and dies.
+for stale_desktop in "${DESKTOP_DIR}"/pixi-*-terminal.desktop; do
     [ -f "${stale_desktop}" ] || continue
-    stale_entry=$(basename "${stale_desktop}")
-    # The playbook writes its own pixi-* entries into /usr/share/applications:
-    # pixi-jupyterlab.desktop and one pixi-<tool>-napari.desktop per GUI tool.
-    # A user who copies one of those to ~/Desktop would otherwise lose it here,
-    # because neither "jupyterlab" nor "<tool>-napari" is a directory under
-    # SHARED_DIR, so the name test below reads them as stale. They are not ours
-    # to garbage-collect either — desktop.yml removes its own. Skipping anything
-    # with a system counterpart of the same name keeps the two in their own
-    # lanes without hardcoding the playbook's naming here.
-    if [ -e "/usr/share/applications/${stale_entry}" ]; then
-        continue
-    fi
-    stale_tool=${stale_entry%.desktop}
+    stale_tool=$(basename "${stale_desktop}" -terminal.desktop)
     stale_tool=${stale_tool#pixi-}
-    stale_tool=${stale_tool%-terminal}
     if [ ! -d "${SHARED_DIR}/${stale_tool}/.pixi/envs/default" ]; then
         echo "Removing launcher for environment that is not installed: ${stale_tool}"
-        rm -f "${stale_desktop}"
-        continue
-    fi
-    # A GUI launcher for a tool that no longer has a GUI. Earlier versions of
-    # this script gave every tool in a hand-written list a napari launcher,
-    # including environments with no napari plugin, so those icons opened an
-    # empty viewer. They survive in the user's home directory until removed.
-    case "${stale_desktop}" in
-        *-terminal.desktop) continue ;;
-    esac
-    if [[ ! -v "GUI_COMMANDS[${stale_tool}]" ]]; then
-        echo "Removing GUI launcher for a tool with no graphical interface: ${stale_tool}"
         rm -f "${stale_desktop}"
     fi
 done
@@ -192,14 +147,24 @@ for desktop_file in "${DESKTOP_DIR}"/pixi-*.desktop; do
     trust_launcher "${desktop_file}"
 done
 
+SYSTEM_DESKTOP_DIR=/usr/share/applications
+
 if [ -d "${HOME}/Desktop" ] || [ -d "/etc/xdg/autostart" ]; then
     mkdir -p "${HOME}/Desktop"
-    for desktop_file in "${DESKTOP_DIR}"/pixi-*.desktop; do
+    for desktop_file in "${SYSTEM_DESKTOP_DIR}"/pixi-*.desktop; do
         [ -f "${desktop_file}" ] || continue
-        case "${desktop_file}" in *-terminal.desktop) continue ;; esac
         cp "${desktop_file}" "${HOME}/Desktop/"
         chmod +x "${HOME}/Desktop/$(basename "${desktop_file}")"
         trust_launcher "${HOME}/Desktop/$(basename "${desktop_file}")"
+    done
+    # Desktop icons for launchers the playbook has since withdrawn — a tool
+    # dropped from PIXI_AI_TOOLS_PRELOAD, or one that turned out to have no GUI.
+    for desktop_icon in "${HOME}"/Desktop/pixi-*.desktop; do
+        [ -f "${desktop_icon}" ] || continue
+        if [ ! -f "${SYSTEM_DESKTOP_DIR}/$(basename "${desktop_icon}")" ]; then
+            echo "Removing desktop icon with no launcher behind it: $(basename "${desktop_icon}")"
+            rm -f "${desktop_icon}"
+        fi
     done
 fi
 

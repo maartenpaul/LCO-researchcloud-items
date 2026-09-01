@@ -1,0 +1,11 @@
+---
+# Icon theme caches are only rebuilt when something asks. Without this the new
+# launchers fall back to a generic icon until an unrelated package install
+# happens to refresh the cache.
+- name: Refresh the icon theme cache
+  ansible.builtin.command:
+    cmd: gtk-update-icon-cache --force --ignore-theme-index {{ pixi_ai_tools_icon_dir }}
+  changed_when: true
+  # Absent on a workspace with no desktop libraries, where there is no cache to
+  # refresh and the icons simply sit unused.
+  failed_when: false

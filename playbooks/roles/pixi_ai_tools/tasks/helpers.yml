@@ -7,8 +7,8 @@
 # desktop-flavour workspace already has a desktop of its own and never runs
 # desktop.yml.
 #
-# The desktop-only helpers (ai-tools-gui, ai-tools-kernel, ai-tools-lab) stay in
-# desktop.yml, since without a desktop there is nothing for them to do.
+# ai-tools-kernel stays in desktop.yml: it wraps kernels in xvfb-run, which only
+# that phase installs.
 
 - name: Install the ai-tools helper for users who need to add packages
   ansible.builtin.copy:
@@ -22,6 +22,24 @@
   ansible.builtin.copy:
     src: ai-tools-has-gui
     dest: /usr/local/bin/ai-tools-has-gui
+    mode: "0755"
+    owner: root
+    group: root
+
+# Both are referenced by the menu entries in launchers.yml, which are written
+# whether or not this component installs a desktop.
+- name: Install the GUI launcher
+  ansible.builtin.copy:
+    src: ai-tools-gui
+    dest: /usr/local/bin/ai-tools-gui
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Install the JupyterLab launcher
+  ansible.builtin.copy:
+    src: ai-tools-lab
+    dest: /usr/local/bin/ai-tools-lab
     mode: "0755"
     owner: root
     group: root

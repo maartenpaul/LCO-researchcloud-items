@@ -8,37 +8,77 @@
     state: present
     update_cache: true
 
-- name: Check if pixi is already installed
-  ansible.builtin.stat:
-    path: "{{ pixi_ai_tools_bin }}"
-  register: pixi_ai_tools_binary
+# pixi is pinned. Installing whatever happened to be current meant two
+# workspaces built from the same component version could get different pixi
+# releases, which is how a lock-format migration in a newer pixi came to break
+# redeploys on some machines and not others. Pinning also makes trying a new
+# pixi a deliberate, reversible step: set the parameter on a test workspace,
+# check it, then change the default here.
+- name: Check which pixi version is installed
+  ansible.builtin.command: "{{ pixi_ai_tools_bin }} --version"
+  register: pixi_ai_tools_pixi_installed
+  changed_when: false
+  failed_when: false
 
-- name: Download pixi installer
-  ansible.builtin.get_url:
-    url: https://pixi.sh/install.sh
-    dest: /tmp/pixi-install.sh
-    mode: "0755"
-  when: not pixi_ai_tools_binary.stat.exists
+# `pixi --version` prints "pixi 0.78.0"; the parameter may carry a leading v.
+- name: Work out whether pixi has to be installed
+  ansible.builtin.set_fact:
+    pixi_ai_tools_pixi_current: >-
+      {{ (pixi_ai_tools_pixi_installed.stdout | default('') | trim
+          | regex_replace('^pixi ', '')) if pixi_ai_tools_pixi_installed.rc == 0 else '' }}
+    pixi_ai_tools_pixi_wanted: "{{ pixi_ai_tools_pixi_version | regex_replace('^v', '') }}"
 
-- name: Install pixi
-  ansible.builtin.command:
-    cmd: bash /tmp/pixi-install.sh
-  environment:
-    PIXI_HOME: "{{ pixi_ai_tools_home }}"
-  args:
-    creates: "{{ pixi_ai_tools_bin }}"
-  when: not pixi_ai_tools_binary.stat.exists
+- name: Decide whether to run the pixi installer
+  ansible.builtin.set_fact:
+    # "latest" only fills in a missing pixi — it never chases new releases,
+    # which would silently change the toolchain under a running course.
+    pixi_ai_tools_pixi_install: >-
+      {{ pixi_ai_tools_pixi_current | length == 0
+         or (pixi_ai_tools_pixi_wanted != 'latest'
+             and pixi_ai_tools_pixi_current != pixi_ai_tools_pixi_wanted) }}
 
-- name: Remove pixi installer
-  ansible.builtin.file:
-    path: /tmp/pixi-install.sh
-    state: absent
+- name: Install pixi at the pinned version
+  when: pixi_ai_tools_pixi_install | bool
+  block:
+    - name: Download pixi installer
+      ansible.builtin.get_url:
+        url: https://pixi.sh/install.sh
+        dest: /tmp/pixi-install.sh
+        mode: "0755"
+
+    # The installer reads PIXI_VERSION and defaults to "latest" itself, so the
+    # parameter is passed through unchanged.
+    - name: Install pixi
+      ansible.builtin.command:
+        cmd: bash /tmp/pixi-install.sh
+      environment:
+        PIXI_HOME: "{{ pixi_ai_tools_home }}"
+        PIXI_VERSION: "{{ pixi_ai_tools_pixi_wanted }}"
+      changed_when: true
+
+  always:
+    - name: Remove pixi installer
+      ansible.builtin.file:
+        path: /tmp/pixi-install.sh
+        state: absent
 
 - name: Verify pixi installation
   ansible.builtin.command: "{{ pixi_ai_tools_bin }} --version"
-  register: pixi_ai_tools_pixi_version
+  register: pixi_ai_tools_pixi_check
   changed_when: false
 
 - name: Display pixi version
   ansible.builtin.debug:
-    msg: "Pixi version: {{ pixi_ai_tools_pixi_version.stdout }}"
+    msg: >-
+      {{ pixi_ai_tools_pixi_check.stdout }}
+      (requested: {{ pixi_ai_tools_pixi_version }})
+
+- name: Fail when the installed pixi is not the pinned one
+  ansible.builtin.fail:
+    msg: >-
+      Asked for pixi {{ pixi_ai_tools_pixi_wanted }} but
+      {{ pixi_ai_tools_pixi_check.stdout | trim }} is installed.
+  when:
+    - pixi_ai_tools_pixi_wanted != 'latest'
+    - (pixi_ai_tools_pixi_check.stdout | trim | regex_replace('^pixi ', ''))
+      != pixi_ai_tools_pixi_wanted

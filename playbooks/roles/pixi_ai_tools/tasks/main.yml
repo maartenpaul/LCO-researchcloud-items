@@ -27,6 +27,9 @@
 - name: Install the user-facing helper scripts
   ansible.builtin.import_tasks: helpers.yml
 
+- name: Write the application menu entries and icons
+  ansible.builtin.import_tasks: launchers.yml
+
 - name: Locate the JupyterHub single-user venv
   ansible.builtin.import_tasks: jupyter_venv.yml
 
