@@ -11,10 +11,11 @@ Deploys [Pixi](https://pixi.sh)-based AI/ML bioimage analysis tool environments 
 1. Installs Pixi globally (`/usr/local/bin/pixi`)
 2. Clones the tools **once** to `/opt/AI_tools_pixi` (root-owned, read-only for users)
 3. Pre-installs the environments named by `PIXI_AI_TOOLS_PRELOAD` into that shared location
-4. Registers a **system-wide Jupyter kernel** per pre-installed tool — every user sees them at first login, with no per-user setup
-5. Sets up a **shared package cache** at `/opt/pixi-cache` that users can write to
-6. Installs `pixi-kernel` into the JupyterHub single-user venv and lifts SRC's kernel allowlist (see below)
-7. Optionally (`PIXI_AI_TOOLS_DESKTOP`) installs a remote desktop for GUI tools — see [Running GUI tools](#running-gui-tools)
+4. On a workspace with no JupyterHub, also installs the `jupyterlab` environment — the Lab *server* `ai-tools-lab` starts, carrying the Lab extensions (jupyterlab-git, nbdime). It is not a tool: no kernel, no menu entry, not listed by `ai-tools list`. A JupyterHub workspace skips it and keeps using `/etc/src/venv/jupyter-venv`.
+5. Registers a **system-wide Jupyter kernel** per pre-installed tool — every user sees them at first login, with no per-user setup
+6. Sets up a **shared package cache** at `/opt/pixi-cache` that users can write to
+7. Installs `pixi-kernel` into the JupyterHub single-user venv and lifts SRC's kernel allowlist (see below)
+8. Optionally (`PIXI_AI_TOOLS_DESKTOP`) installs a remote desktop for GUI tools — see [Running GUI tools](#running-gui-tools)
 
 **At first user login (runonce):** shell completion, desktop launchers for GUI tools, and cleanup of kernels left by older versions. No cloning, no environment installs.
 

@@ -48,6 +48,12 @@ pixi_ai_tools_repo_url: https://github.com/Leiden-Cell-Observatory/AI_tools_pixi
 # Per-user clones would multiply 5-10 GB per env by the number of students.
 pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
 pixi_ai_tools_cache_dir: /opt/pixi-cache
+# The environment in the shared checkout that provides the JupyterLab *server*
+# for the desktop flavour, where SRC installs no Lab of its own. It is not a
+# tool: it gets no kernel and no menu entry, and it is installed only where it
+# is needed — a JupyterHub workspace spawns Lab from its own venv and never
+# looks at this. Set to "" to never install it.
+pixi_ai_tools_lab_env: jupyterlab
 pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels
 pixi_ai_tools_kernel_wrapper: /usr/local/bin/ai-tools-kernel
 pixi_ai_tools_icon_dir: /usr/share/icons/hicolor

@@ -14,6 +14,9 @@ PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-/opt/pixi-cache}"
 PIXI_BIN="${PIXI_BIN:-/usr/local/bin/pixi}"
 KERNEL_WRAPPER="${KERNEL_WRAPPER:-/usr/local/bin/ai-tools-kernel}"
 MY_DIR="${HOME}/AI_tools_pixi"
+# Infrastructure, not a tool: this environment holds the JupyterLab server, has
+# no kernel, and there is nothing useful to fork out of it.
+LAB_ENV="${LAB_ENV:-jupyterlab}"
 KERNEL_DIR="${HOME}/.local/share/jupyter/kernels"
 
 export PIXI_CACHE_DIR
@@ -47,7 +50,9 @@ env_is_built() {
 available_tools() {
     for d in "${SHARED_DIR}"/*/; do
         [ -f "${d}pixi.toml" ] || continue
-        basename "${d}"
+        name=$(basename "${d}")
+        [ "${name}" = "${LAB_ENV}" ] && continue
+        echo "${name}"
     done
 }
 

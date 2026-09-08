@@ -166,11 +166,20 @@
     file_type: file
   register: pixi_ai_tools_shared_manifests
 
+- name: Build the list of environments found in the checkout
+  ansible.builtin.set_fact:
+    pixi_ai_tools_discovered_envs: >-
+      {{ pixi_ai_tools_shared_manifests.files
+         | map(attribute='path') | map('dirname') | map('basename') | sort }}
+
+# The Lab environment is infrastructure, not a tool. Keeping it out of the tool
+# list is what stops kernels.yml and launchers.yml — both of which loop over
+# pixi_ai_tools_preload_tools — from giving it a Jupyter kernel and a menu
+# entry. It is still installed, from the separate list built below.
 - name: Build the list of tools to pre-install
   ansible.builtin.set_fact:
     pixi_ai_tools_all_tools: >-
-      {{ pixi_ai_tools_shared_manifests.files
-         | map(attribute='path') | map('dirname') | map('basename') | sort }}
+      {{ pixi_ai_tools_discovered_envs | reject('equalto', pixi_ai_tools_lab_env) | list }}
 
 - name: Resolve the preload selection
   ansible.builtin.set_fact:
@@ -178,12 +187,33 @@
       {{ pixi_ai_tools_all_tools if pixi_ai_tools_preload | lower == 'all'
          else (pixi_ai_tools_preload.split(',') | map('trim') | select('in', pixi_ai_tools_all_tools) | list) }}
 
+# Only where nothing else provides a Lab. A JupyterHub workspace spawns its own
+# from /etc/src/venv/jupyter-venv — which already carries the git extension —
+# and a second Lab there would be a gigabyte nobody opens. The desktop flavour
+# has no Lab at all, which is what this environment is for.
+- name: Decide whether the shared JupyterLab environment is wanted
+  ansible.builtin.set_fact:
+    pixi_ai_tools_want_lab_env: >-
+      {{ pixi_ai_tools_lab_env | length > 0
+         and pixi_ai_tools_lab_env in pixi_ai_tools_discovered_envs
+         and pixi_ai_tools_singleuser_launcher.matched | int == 0 }}
+
+- name: Build the full install list
+  ansible.builtin.set_fact:
+    pixi_ai_tools_install_envs: >-
+      {{ pixi_ai_tools_preload_tools
+         + ([pixi_ai_tools_lab_env] if pixi_ai_tools_want_lab_env | bool else []) }}
+
 - name: Report preload selection
   ansible.builtin.debug:
     msg: >-
       Pre-installing shared environments: {{ pixi_ai_tools_preload_tools | join(', ') | default('(none)', true) }}.
       Available: {{ pixi_ai_tools_all_tools | join(', ') }}.
       Only pre-installed tools get a shared Jupyter kernel — users cannot write to {{ pixi_ai_tools_shared_dir }}.
+      {% if pixi_ai_tools_want_lab_env | bool %}
+      This workspace has no JupyterHub, so the '{{ pixi_ai_tools_lab_env }}' environment is installed as well
+      to provide the JupyterLab server that ai-tools-lab starts. It gets no kernel and no menu entry.
+      {% endif %}
 
 # The long pole of the deploy. Runs before any student logs in.
 #
@@ -221,7 +251,7 @@
     executable: /bin/bash
   environment:
     PIXI_CACHE_DIR: "{{ pixi_ai_tools_cache_dir }}"
-  loop: "{{ pixi_ai_tools_preload_tools }}"
+  loop: "{{ pixi_ai_tools_install_envs }}"
   register: pixi_ai_tools_preload
   changed_when: "'pixi-changed' in pixi_ai_tools_preload.stdout"
 

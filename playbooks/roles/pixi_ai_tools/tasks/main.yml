@@ -20,6 +20,11 @@
 - name: Report GPU availability
   ansible.builtin.import_tasks: gpu.yml
 
+# Before the shared checkout, which needs to know whether this workspace has a
+# JupyterHub of its own to decide whether the Lab environment is wanted.
+- name: Locate the JupyterHub single-user venv
+  ansible.builtin.import_tasks: jupyter_venv.yml
+
 - name: Deploy the shared tool checkout and package cache
   ansible.builtin.import_tasks: shared_env.yml
 
@@ -29,9 +34,6 @@
 
 - name: Write the application menu entries and icons
   ansible.builtin.import_tasks: launchers.yml
-
-- name: Locate the JupyterHub single-user venv
-  ansible.builtin.import_tasks: jupyter_venv.yml
 
 # Before the kernels, which are wrapped in the display helper it installs.
 - name: Install GPU rendering and the notebook display wrapper
