@@ -1,0 +1,68 @@
+---
+# Offline harness: renders the fractal role's artefacts into "render_dir" with
+# fixed fake values, so the template logic can be checked without a workspace,
+# Docker or nginx. Run it through tests/assert_render.sh.
+#
+# The file list comes from the role's own fractal_conf_templates, so it is
+# never duplicated here. Values normally supplied by SRC or by earlier tasks
+# are set below.
+- name: Render fractal role artefacts for inspection
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    render_dir: /tmp/fractal-render
+  tasks:
+    - name: Load the role's defaults
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../defaults/main.yml"
+
+    # Set after include_vars, not as play vars: variables loaded by a task
+    # outrank play vars, so the defaults' empty password would win.
+    - name: Stand in for the values tasks/config.yml resolves at deploy time
+      ansible.builtin.set_fact:
+        fractal_admin_password: rendertestpassword
+        fractal_jwt_secret: rendertestsecret
+        fractal_workspace_fqdn: fractal.example.src.surf-hosted.nl
+
+    - name: Ensure the render directory exists
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render the bind-mounted configuration files
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/{{ item.src }}"
+        dest: "{{ render_dir }}/{{ item.dest }}"
+        mode: "0644"
+      loop: "{{ fractal_conf_templates }}"
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Render the compose override and the nginx configuration
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/{{ item.src }}"
+        dest: "{{ render_dir }}/{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - src: docker-compose.override.yml.j2
+          dest: docker-compose.override.yml
+        - src: fractal-location.conf.j2
+          dest: fractal.conf
+        - src: fractal-proxy-defaults.conf.j2
+          dest: fractal-proxy.conf
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Dump the derived values the assertions check
+      ansible.builtin.copy:
+        dest: "{{ render_dir }}/vars.json"
+        mode: "0644"
+        content: >-
+          {{ {
+            'fractal_slurm_cpus': fractal_slurm_cpus | int,
+            'fractal_slurm_memory': fractal_slurm_memory | int,
+            'host_vcpus': ansible_processor_vcpus | int,
+            'host_mem_mb': ansible_memtotal_mb | int
+          } | to_nice_json }}

@@ -1,0 +1,44 @@
+---
+# fractal.yml — SURF Research Cloud component entry point.
+#
+# Deploys the Fractal analytics platform (fractal-server, fractal-web,
+# fractal-data, fractal-feature-explorer, filebrowser, PostgreSQL and a
+# containerised demo SLURM cluster) with Docker Compose, based on the
+# "full-stack" example of fractal-analytics-platform/fractal-containers,
+# served through the SRC nginx reverse proxy. All logic lives in
+# roles/fractal; see its README.
+#
+# SRC Parameters. Declared in the component wizard; SRC passes each one to this
+# playbook as an Ansible variable named after its key. The role also accepts the
+# same names as environment variables, which is only meant for testing outside
+# SRC.
+#   FRACTAL_DATA_PATH        — bind-mount base for Fractal data (zarrs, images,
+#                              tasks, job artifacts). SRC mounts attached
+#                              storage at /data/<storage-name>, so mark this
+#                              parameter Required and let SRC ask the
+#                              workspace-user at creation time
+#                              (default: empty → a Docker named volume)
+#   FRACTAL_ADMIN_EMAIL      — bootstrapped Fractal admin account
+#                              (default: "admin@example.org")
+#   FRACTAL_ADMIN_PASSWORD   — password for that account, first boot only
+#                              (default: generated, stored in
+#                              /opt/fractal/credentials)
+#   FRACTAL_REQUIRE_SRAM_AUTH — require SRAM login in front of the web client
+#                              (default: "true")
+#   FRACTAL_DEMO_DATA        — collect the demo task packages and download the
+#                              Zenodo example datasets on first boot
+#                              (default: "true")
+#   FRACTAL_CONTAINERS_REF   — commit of fractal-containers to deploy
+#   FRACTAL_SERVER_VERSION   — fractal-server release (default: "2.24.2")
+#   FRACTAL_WEB_VERSION      — fractal-web release (default: "1.29.6")
+#   FRACTAL_CLIENT_VERSION   — fractal-client release (default: "2.23.1")
+#   FRACTAL_FEATURE_EXPLORER_VERSION — feature-explorer release
+#                              (default: "0.1.18")
+
+- name: Deploy Fractal
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: true
+  roles:
+    - fractal

@@ -1,0 +1,107 @@
+---
+# Secrets are generated once and reused on every later run. Regenerating the
+# JWT secret would invalidate every session and every issued token; the admin
+# password is only consumed while initialising a fresh database, so a new one
+# would silently stop matching the account that exists.
+#
+# The password lookup writes its own store on the Ansible controller as the
+# invoking user, which ignores "become" and fails against a root-owned
+# directory. Read and write the store with modules instead.
+- name: Look for previously generated secrets
+  ansible.builtin.stat:
+    path: "{{ fractal_project_dir }}/.{{ item.name }}"
+  loop: "{{ fractal_secrets }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: fractal_secret_stat
+
+- name: Read previously generated secrets
+  ansible.builtin.slurp:
+    src: "{{ fractal_project_dir }}/.{{ item.item.name }}"
+  loop: "{{ fractal_secret_stat.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.stat.exists
+  register: fractal_secret_slurp
+
+# The lookup's parameters have to travel inside the term string: it only
+# accepts them as keyword arguments from ansible-core 2.11 onwards, and older
+# versions silently fall back to defaults that include punctuation — which
+# then has to survive a shell single-quote in run_server.sh.
+- name: Resolve each secret, generating one where none exists
+  ansible.builtin.set_fact:
+    fractal_resolved_secrets: >-
+      {{ fractal_resolved_secrets | default({}) | combine({item.0.name: secret_value}) }}
+  vars:
+    secret_value: >-
+      {{ (item.1.content | b64decode | trim)
+         if (item.1.content is defined)
+         else (lookup('ansible.builtin.password',
+                      '/dev/null length=' ~ item.0.length ~ ' chars=ascii_letters,digits') | trim) }}
+  loop: "{{ fractal_secrets | zip(fractal_secret_slurp.results) | list }}"
+  loop_control:
+    label: "{{ item.0.name }}"
+  no_log: true
+
+# Written unconditionally: copy is idempotent, so an unchanged secret is a
+# no-op and there is no "was this newly generated" bookkeeping to get wrong.
+- name: Persist the secrets
+  ansible.builtin.copy:
+    dest: "{{ fractal_project_dir }}/.{{ item.name }}"
+    content: "{{ fractal_resolved_secrets[item.name] }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ fractal_secrets }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+# Recorded before the password is filled in below. Keys of a single set_fact
+# are evaluated in order and later ones see the earlier ones, so asking this
+# question in the same task would always answer "false".
+- name: Note whether the admin password came from a parameter
+  ansible.builtin.set_fact:
+    fractal_admin_password_generated: "{{ fractal_admin_password | length == 0 }}"
+
+- name: Select the secrets the templates use
+  ansible.builtin.set_fact:
+    fractal_admin_password: >-
+      {{ fractal_admin_password if fractal_admin_password | length > 0
+         else fractal_resolved_secrets['admin_password'] }}
+    fractal_jwt_secret: "{{ fractal_resolved_secrets['jwt_secret'] }}"
+  no_log: true
+
+- name: Write a human-readable credentials file
+  ansible.builtin.copy:
+    dest: "{{ fractal_project_dir }}/credentials"
+    content: |
+      Fractal administrator credentials
+      =================================
+      URL:      https://{{ fractal_workspace_fqdn }}/
+      User:     {{ fractal_admin_email }}
+      Password: {{ fractal_admin_password }}
+
+      Generated at deploy time because FRACTAL_ADMIN_PASSWORD was not set.
+      fractal-server only consumes this password while initialising a fresh
+      database — editing this file does NOT change the Fractal password.
+    owner: root
+    group: root
+    mode: "0600"
+  when: fractal_admin_password_generated | bool
+
+# Each of these is baked into an image at build time, so a compose override
+# cannot reach it. The list lives in defaults/main.yml, where the offline
+# render harness reads it too. "service" names the container that mounts the
+# file; tasks/compose.yml recreates only that one when the file changes.
+- name: Render the bind-mounted configuration files
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ fractal_conf_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop: "{{ fractal_conf_templates }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  register: fractal_conf_rendered

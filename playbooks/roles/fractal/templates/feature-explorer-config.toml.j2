@@ -1,0 +1,10 @@
+# Managed by the fractal SRC component — bind-mounted over /app/config.toml.
+#
+# Every URL is https on the workspace FQDN. The feature explorer validates that
+# a pasted plate URL starts with fractal_data_url, and refuses plain http
+# unless allow_http is set; behind the SRC proxy neither problem exists, so
+# allow_http is deliberately absent rather than set to false.
+deployment_type = "production"
+fractal_frontend_url = "https://{{ fractal_workspace_fqdn }}"
+fractal_backend_url = "https://{{ fractal_workspace_fqdn }}"
+fractal_data_url = "https://{{ fractal_workspace_fqdn }}/data"

@@ -1,0 +1,123 @@
+---
+- name: Deploy the compose override
+  ansible.builtin.template:
+    src: docker-compose.override.yml.j2
+    dest: "{{ fractal_compose_dir }}/docker-compose.override.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  register: fractal_override
+
+# A named volume with driver_opts.device caches that path at creation time.
+# Compose does not update an existing volume when the device changes — it
+# keeps mounting the old path, silently — so pointing FRACTAL_DATA_PATH at new
+# storage would otherwise appear to work and change nothing. Removing a
+# bind-type volume drops the pointer, not the files underneath it.
+- name: Read the device path of the managed volumes
+  ansible.builtin.command: >-
+    docker volume inspect --format {% raw %}'{{ .Options.device }}'{% endraw %}
+    {{ fractal_compose_project }}_{{ item.name }}
+  loop:
+    - name: data
+      device: "{{ fractal_data_path }}"
+    - name: postgres_db
+      device: "{{ fractal_data_path }}/postgres"
+  loop_control:
+    label: "{{ item.name }}"
+  register: fractal_volume_devices
+  changed_when: false
+  # A volume that does not exist yet exits non-zero; "up" will create it.
+  failed_when: false
+
+# A volume with no driver_opts reports "<no value>" here — it is a plain
+# Docker volume holding real data, not a pointer to a bind mount, so removing
+# it would destroy that data. Refuse rather than guess.
+- name: Fail on a pre-existing volume that is not a bind mount
+  ansible.builtin.fail:
+    msg: >-
+      The Docker volume {{ fractal_compose_project }}_{{ item.item.name }}
+      exists but is not a bind mount to {{ item.item.device }}, so this
+      component cannot repoint it without destroying whatever it holds. Back
+      up its contents and remove it by hand
+      ("docker volume rm {{ fractal_compose_project }}_{{ item.item.name }}"),
+      then re-run this component.
+  loop: "{{ fractal_volume_devices.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - item.rc == 0
+    - not (item.stdout | trim is match('^/'))
+
+# Each result has to be compared against its own item, which no single filter
+# chain expresses, so accumulate the mismatches in a loop instead.
+- name: Select volumes whose device no longer matches the data path
+  ansible.builtin.set_fact:
+    fractal_stale_volumes: "{{ (fractal_stale_volumes | default([])) + [item.item.name] }}"
+  loop: "{{ fractal_volume_devices.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - item.rc == 0
+    - item.stdout | trim is match('^/')
+    - item.stdout | trim != item.item.device
+
+- name: Default the stale-volume list when every volume is current
+  ansible.builtin.set_fact:
+    fractal_stale_volumes: "{{ fractal_stale_volumes | default([]) }}"
+
+- name: Stop the stack before repointing a volume
+  ansible.builtin.command: "{{ fractal_compose_cmd }} down"
+  args:
+    chdir: "{{ fractal_compose_dir }}"
+  changed_when: true
+  when: fractal_stale_volumes | length > 0
+
+- name: Remove volumes whose device no longer matches the data path
+  ansible.builtin.command: "docker volume rm {{ fractal_compose_project }}_{{ item }}"
+  loop: "{{ fractal_stale_volumes }}"
+  changed_when: true
+
+- name: Build the Fractal images
+  ansible.builtin.command: "{{ fractal_compose_cmd }} build"
+  args:
+    chdir: "{{ fractal_compose_dir }}"
+  register: fractal_compose_build
+  changed_when: false
+  failed_when: fractal_compose_build.rc != 0
+
+- name: Start the Fractal stack
+  ansible.builtin.command: "{{ fractal_compose_cmd }} up -d"
+  args:
+    chdir: "{{ fractal_compose_dir }}"
+  register: fractal_compose_up
+  changed_when: >-
+    'Created' in fractal_compose_up.stderr or 'Started' in fractal_compose_up.stderr
+  failed_when: fractal_compose_up.rc != 0
+
+# Docker binds a single-file mount to the inode the file had when the container
+# started, and template replaces files rather than rewriting them in place, so
+# a rewritten template is invisible to a running container. Recreate only the
+# service that mounts the file that actually changed — recreating the whole
+# stack would bounce PostgreSQL for a change to the explorer's config.
+- name: Recreate the services whose inputs changed
+  ansible.builtin.command: "{{ fractal_compose_cmd }} up -d --force-recreate --build {{ item }}"
+  args:
+    chdir: "{{ fractal_compose_dir }}"
+  loop: >-
+    {{ (fractal_conf_rendered.results | selectattr('changed')
+        | map(attribute='item.service') | list
+        + (['web'] if fractal_web_patch is changed else [])) | unique | list }}
+  changed_when: true
+
+# One wait, not one per service. fractal-server answering means the database
+# migrated and the stack is functional; web, data and the explorer come up
+# behind it, and a red playbook on a slow VM is worse for the operator than a
+# browser 502 for another half minute.
+- name: Wait for fractal-server to answer
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ fractal_server_port }}/api/alive/"
+    status_code: [200]
+  register: fractal_server_response
+  retries: 60
+  delay: 10
+  until: fractal_server_response.status is defined and fractal_server_response.status == 200

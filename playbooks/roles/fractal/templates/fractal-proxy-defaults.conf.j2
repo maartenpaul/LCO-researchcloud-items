@@ -1,0 +1,15 @@
+# Managed by the fractal SRC component. Included by every Fractal location.
+#
+# Lives in /etc/nginx/snippets/ rather than in app-location-conf.d/, because
+# everything in that directory is included inside the server block as a
+# location file — bare directives there would land at server level.
+#
+# $connection_upgrade is defined by SRC's own conf.d/map_upgrade.conf.
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $connection_upgrade;
+proxy_read_timeout 300;
+client_max_body_size 10G;

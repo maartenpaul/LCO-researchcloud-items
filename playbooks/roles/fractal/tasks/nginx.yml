@@ -1,0 +1,49 @@
+---
+- name: Create the nginx snippets directory
+  ansible.builtin.file:
+    path: "{{ fractal_nginx_snippet | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the shared proxy directives
+  ansible.builtin.template:
+    src: fractal-proxy-defaults.conf.j2
+    dest: "{{ fractal_nginx_snippet }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Deploy the Fractal location blocks on the SRC HTTPS server
+  ansible.builtin.template:
+    src: fractal-location.conf.j2
+    dest: "{{ fractal_nginx_location_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+# Check the merged configuration here rather than leaving it to the reload
+# handler. A failing "systemctl reload nginx" only reports "Job for
+# nginx.service failed", which says nothing about the cause; "nginx -t" names
+# the file and the line.
+- name: Validate the merged nginx configuration
+  ansible.builtin.command: nginx -t
+  register: fractal_nginx_test
+  changed_when: false
+  failed_when: false
+
+- name: Fail with the nginx error when the configuration is invalid
+  ansible.builtin.fail:
+    msg: |-
+      The nginx configuration is invalid after adding the Fractal config, so
+      nginx was left running with its previous configuration.
+
+      {{ fractal_nginx_test.stderr | default(fractal_nginx_test.stdout, true) }}
+
+      A "duplicate location" error means another component already defines
+      "location /" on the workspace server. Remove that component from the
+      catalog item — SURF's Demo Web Apps component does this.
+  when: fractal_nginx_test.rc != 0

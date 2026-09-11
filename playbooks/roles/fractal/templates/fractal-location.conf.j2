@@ -1,0 +1,54 @@
+{% macro sram_auth() %}
+{% if fractal_require_sram_auth | bool %}
+    # --- SRAM authentication (remove these lines to open Fractal directly) ---
+    # Deliberately no REMOTE_USER / REMOTE_ROLES headers: fractal-web ignores
+    # both, so forwarding them would read like working single sign-on that
+    # does not exist. Fractal keeps its own accounts; this is only a gate.
+    error_page 401 = @custom_401;
+    auth_request /validate;
+    # --- end of SRAM authentication ---
+{% endif %}
+{%- endmacro %}
+# Fractal on the main SRC HTTPS server (port 443).
+# Managed by the fractal SRC component — re-running the component overwrites
+# this file.
+#
+# Every browser-facing Fractal service is served from this one origin. That is
+# a requirement, not a preference: fractal-web's PUBLIC_* URLs are compiled
+# into the client bundle and fetched by the browser, so a plain-http port
+# would be blocked as mixed content, and fractal-data authorises requests
+# using the session cookie fractal-server issues, which the browser only sends
+# to the same domain.
+#
+# To toggle SRAM authentication on a live workspace, edit the marked lines
+# below and run "nginx -s reload".
+
+location / {
+{{ sram_auth() }}
+    include {{ fractal_nginx_snippet }};
+    proxy_pass http://127.0.0.1:{{ fractal_web_port }};
+}
+
+# fractal-data already serves under BASE_PATH=/data, so the prefix is passed
+# through unchanged — note the absence of a trailing slash on proxy_pass. No
+# SRAM gate here: the service extracts the Fractal token from the cookie and
+# asks fractal-server which paths this user may read.
+location /data {
+    include {{ fractal_nginx_snippet }};
+    proxy_pass http://127.0.0.1:{{ fractal_data_port }};
+}
+
+# Streamlit, told its own prefix through STREAMLIT_SERVER_BASE_URL_PATH. The
+# upgrade headers in the snippet carry its websocket.
+location /explorer {
+    include {{ fractal_nginx_snippet }};
+    proxy_pass http://127.0.0.1:{{ fractal_explorer_port }};
+}
+
+# filebrowser runs with auth.method=noauth, so it is only ever exposed behind
+# the same SRAM gate as the web client.
+location /files {
+{{ sram_auth() }}
+    include {{ fractal_nginx_snippet }};
+    proxy_pass http://127.0.0.1:{{ fractal_filebrowser_port }};
+}

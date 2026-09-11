@@ -1,0 +1,81 @@
+---
+- name: Verify Debian-family OS
+  ansible.builtin.fail:
+    msg: >-
+      This component only supports Debian-family distributions (Ubuntu), like
+      the other components in this repository.
+  when: ansible_facts['os_family'] != 'Debian'
+
+- name: Populate service facts
+  ansible.builtin.service_facts:
+
+- name: Fail if Docker is not installed or not running
+  ansible.builtin.fail:
+    msg: >-
+      Docker is not installed or not running. Put a Docker component
+      (e.g. SURF's "Docker Environment") before this Fractal component
+      in the catalog item.
+  when: services['docker.service'] is not defined or services['docker.service'].state != 'running'
+
+- name: Check for the compose plugin
+  ansible.builtin.command: docker compose version
+  register: fractal_compose_plugin
+  failed_when: false
+  changed_when: false
+
+- name: Check for the docker-compose binary
+  ansible.builtin.command: docker-compose version
+  register: fractal_compose_binary
+  failed_when: false
+  changed_when: false
+
+- name: Fail if no Docker Compose is available
+  ansible.builtin.fail:
+    msg: >-
+      Neither "docker compose" (plugin) nor "docker-compose" was found.
+      Install Docker Compose on the base workspace first.
+  when: fractal_compose_plugin.rc != 0 and fractal_compose_binary.rc != 0
+
+- name: Set the compose command fact
+  ansible.builtin.set_fact:
+    fractal_compose_cmd: "{{ 'docker compose' if fractal_compose_plugin.rc == 0 else 'docker-compose' }}"
+
+- name: Fail if SRC nginx is missing
+  ansible.builtin.fail:
+    msg: >-
+      nginx is not installed or not active. Put SURF's nginx component before
+      this Fractal component in the catalog item. This is a hard requirement,
+      not a convenience: fractal-web, fractal-data and the feature explorer
+      share an authentication cookie and must be served from one origin.
+  when: services['nginx.service'] is not defined or services['nginx.service'].state != 'running'
+
+- name: Check for the SRC SRAM auth scaffolding
+  ansible.builtin.stat:
+    path: /etc/nginx/app-location-conf.d/authentication.conf
+  register: fractal_src_auth_conf
+
+- name: Fail if SRAM auth was requested but the scaffolding is missing
+  ansible.builtin.fail:
+    msg: >-
+      FRACTAL_REQUIRE_SRAM_AUTH is true, but
+      /etc/nginx/app-location-conf.d/authentication.conf is absent. SURF's
+      nginx component (with SRAM authentication) must run before this
+      component.
+  when: fractal_require_sram_auth | bool and not fractal_src_auth_conf.stat.exists
+
+- name: Fail if the workspace FQDN could not be determined
+  ansible.builtin.fail:
+    msg: >-
+      The workspace FQDN is unknown (workspace_fqdn, WORKSPACE_FQDN and the
+      host FQDN are all unset). Every Fractal URL is derived from it, so the
+      deployment cannot continue.
+  when: fractal_workspace_fqdn | length == 0
+
+- name: Warn when the data path is not on attached storage
+  ansible.builtin.debug:
+    msg: >-
+      {{ fractal_data_path }} is not under /data. Attach storage to the
+      workspace and set FRACTAL_DATA_PATH to /data/<storage-name>, or zarr
+      files will fill the system disk and nothing will survive a workspace
+      rebuild.
+  when: fractal_data_path is not match('^/data/')
