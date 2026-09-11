@@ -110,18 +110,25 @@ make_copy() {
             fi
         done
         "${PIXI_BIN}" install --manifest-path "${dest}/pixi.toml" >&2 || exit 1
-
-        # Several tool environments ship no pip, and "%pip install" in a
-        # notebook then fails with "No module named pip". Adding pip to their
-        # manifests would mean relocking them, which re-solves the PyPI side
-        # and moves torch and CUDA along with it; ensurepip puts the pip that
-        # Python bundles into this copy alone. It survives later `pixi install`
-        # and `pixi add`, which leave packages they did not install alone.
-        local python="${dest}/.pixi/envs/default/bin/python"
-        if ! "${python}" -m pip --version >/dev/null 2>&1; then
-            "${python}" -m ensurepip >&2 || exit 1
-        fi
+        ensure_pip "${dest}" || exit 1
     ) 9>"${MY_DIR}/.${tool}.lock"
+}
+
+# Several tool environments ship no pip, and "%pip install" in a notebook then
+# fails with "No module named pip". Adding pip to their manifests would mean
+# relocking them, which re-solves the PyPI side and moves torch and CUDA along
+# with it; ensurepip puts the pip that Python bundles into the user's copy
+# alone. It survives later `pixi install` and `pixi add`, which leave packages
+# they did not install alone.
+#
+# Checked on every start, not only when a copy is made, so copies made before
+# this existed get pip too. A directory test, because this sits in front of
+# every kernel start and asking Python would add a third of a second to each.
+ensure_pip() {
+    local env="$1/.pixi/envs/default"
+    compgen -G "${env}/lib/python3*/site-packages/pip/__init__.py" >/dev/null && return 0
+    echo "ai-tools: adding pip to your copy at $1..." >&2
+    "${env}/bin/python" -m ensurepip >&2
 }
 
 cmd_list() {
@@ -225,6 +232,9 @@ cmd_run() {
     fi
 
     if env_is_built "${mine}/.pixi/envs/default"; then
+        if ! ensure_pip "${mine}"; then
+            echo "ai-tools: could not add pip to your copy of '${tool}'; %pip install will not work in it." >&2
+        fi
         # Not --frozen: the copy is the user's to change, and after a hand edit
         # of its pixi.toml the lock should follow rather than be ignored.
         exec "${PIXI_BIN}" run --manifest-path "${mine}/pixi.toml" "$@"
