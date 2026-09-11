@@ -4,10 +4,17 @@
 # The desktop flavour of a workspace has no Lab entry point at all, and even on
 # a JupyterHub workspace there is nothing to click inside the desktop itself.
 #
-# Which Lab: the workspace's own venv if SRC installed one, otherwise the first
-# shared environment that ships jupyter-lab. The host barely matters — the pixi
-# kernels are registered system-wide in /usr/local/share/jupyter/kernels, so any
-# Lab on this machine sees all of them.
+# Which Lab: the workspace's own venv if SRC installed one, otherwise the
+# dedicated "jupyterlab" environment in the shared checkout, which is where the
+# Lab extensions (jupyterlab-git, nbdime) live. The host barely matters — the
+# pixi kernels are registered system-wide in /usr/local/share/jupyter/kernels,
+# so any Lab on this machine sees all of them.
+#
+# The last resort is any tool environment that happens to ship jupyter-lab.
+# That used to be the only rule, and it made the answer depend on collation:
+# under LANG=C.UTF-8 the glob starts at CAREamics, under en_US.UTF-8 at biapy,
+# so which Lab — and therefore which extensions — a user got varied with the
+# session locale. LC_ALL=C at least makes the fallback deterministic.
 #
 # Lab is always rooted at $HOME. Starting it from inside a tool directory would
 # root the file browser in /opt/AI_tools_pixi, which is read-only for users, so
@@ -17,18 +24,33 @@ set -euo pipefail
 
 SHARED_DIR="${SHARED_DIR:-/opt/AI_tools_pixi}"
 SRC_VENV_LAB="${SRC_VENV_LAB:-/etc/src/venv/jupyter-venv/bin/jupyter-lab}"
+LAB_ENV="${LAB_ENV:-jupyterlab}"
 
 find_lab() {
     if [ -x "${SRC_VENV_LAB}" ]; then
         echo "${SRC_VENV_LAB}"
         return 0
     fi
-    for env_lab in "${SHARED_DIR}"/*/.pixi/envs/default/bin/jupyter-lab; do
-        if [ -x "${env_lab}" ]; then
-            echo "${env_lab}"
-            return 0
-        fi
-    done
+    shared_lab="${SHARED_DIR}/${LAB_ENV}/.pixi/envs/default/bin/jupyter-lab"
+    if [ -x "${shared_lab}" ]; then
+        echo "${shared_lab}"
+        return 0
+    fi
+    # The glob is sorted by the shell's own collation, so LC_ALL is set here,
+    # in the subshell that expands it, rather than around a command.
+    fallback=$(
+        LC_ALL=C
+        for env_lab in "${SHARED_DIR}"/*/.pixi/envs/default/bin/jupyter-lab; do
+            if [ -x "${env_lab}" ]; then
+                echo "${env_lab}"
+                break
+            fi
+        done
+    )
+    if [ -n "${fallback}" ]; then
+        echo "${fallback}"
+        return 0
+    fi
     return 1
 }
 

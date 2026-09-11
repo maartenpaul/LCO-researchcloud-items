@@ -32,6 +32,22 @@ pixi_ai_tools_desktop: >-
   {{ PIXI_AI_TOOLS_DESKTOP | default(lookup('env', 'PIXI_AI_TOOLS_DESKTOP'), true)
      | default(false, true) }}
 
+# Give every user their own copy of each tool, in ~/AI_tools_pixi, made from the
+# shared environment the first time they start its kernel or menu entry. Users
+# can then "%pip install" in a notebook, or `pixi add`, without affecting anyone
+# else. The shared environments in /opt stay as the source of truth and as the
+# warm package cache that makes a copy take seconds.
+#
+# Meant for workspaces with one or two users. A copy costs ~0.1-0.4 GB of real
+# disk per tool per user (the rest is hardlinked from the shared cache), so ~3 GB
+# for all tools — fine on a personal workspace, ~90 GB on one shared by 30.
+#
+# A redeploy updates only /opt; existing copies keep their versions until the
+# user runs `ai-tools reset <tool>`.
+pixi_ai_tools_per_user_envs: >-
+  {{ PIXI_AI_TOOLS_PER_USER_ENVS | default(lookup('env', 'PIXI_AI_TOOLS_PER_USER_ENVS'), true)
+     | default(false, true) }}
+
 # Pinned so a redeploy installs the pixi it installed last time, and so a new
 # pixi can be tried on one workspace before it becomes everyone's. "latest"
 # restores the old behaviour of taking whatever is current at install time.
@@ -48,6 +64,12 @@ pixi_ai_tools_repo_url: https://github.com/Leiden-Cell-Observatory/AI_tools_pixi
 # Per-user clones would multiply 5-10 GB per env by the number of students.
 pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
 pixi_ai_tools_cache_dir: /opt/pixi-cache
+# The environment in the shared checkout that provides the JupyterLab *server*
+# for the desktop flavour, where SRC installs no Lab of its own. It is not a
+# tool: it gets no kernel and no menu entry, and it is installed only where it
+# is needed — a JupyterHub workspace spawns Lab from its own venv and never
+# looks at this. Set to "" to never install it.
+pixi_ai_tools_lab_env: jupyterlab
 pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels
 pixi_ai_tools_kernel_wrapper: /usr/local/bin/ai-tools-kernel
 pixi_ai_tools_icon_dir: /usr/share/icons/hicolor
