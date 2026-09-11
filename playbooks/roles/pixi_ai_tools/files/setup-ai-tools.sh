@@ -34,11 +34,12 @@ fi
 # Older versions of this component registered per-user kernels that pointed at
 # a per-user clone in ~/AI_tools_pixi. Those are superseded by the shared
 # system-wide kernels, and if left in place each one would trigger a private
-# multi-GB install on first use. Personal forks made with `ai-tools fork` are
-# named pixi-<tool>-mine and are intentionally left alone.
+# multi-GB install on first use. Older versions of `ai-tools fork` likewise
+# registered a pixi-<tool>-mine kernel; the tool's own kernel now runs from the
+# user's copy, so that one is a duplicate. Only kernelspecs are removed — the
+# copies themselves in ~/AI_tools_pixi stay and are what the kernels now use.
 for stale in "${KERNEL_DIR}"/pixi-*; do
     [ -d "${stale}" ] || continue
-    case "${stale}" in *-mine) continue ;; esac
     if grep -q "${HOME}/AI_tools_pixi" "${stale}/kernel.json" 2>/dev/null; then
         echo "Removing superseded per-user kernel: $(basename "${stale}")"
         rm -rf "${stale}"
@@ -65,8 +66,7 @@ if [ ! -f "${PIXI_KERNEL_CONFIG_DIR}/config.toml" ] && [ -x "${PIXI_BIN}" ]; the
     echo "pixi-path = \"${PIXI_BIN}\"" > "${PIXI_KERNEL_CONFIG_DIR}/config.toml"
 fi
 
-# Desktop entries for GUI tools (Guacamole/VNC desktops), pointing at the
-# shared environments. --frozen keeps them from trying to write to /opt.
+# Desktop entries for the Guacamole/VNC desktops.
 DESKTOP_DIR="${HOME}/.local/share/applications"
 mkdir -p "${DESKTOP_DIR}"
 
@@ -83,12 +83,16 @@ for tool_dir in "${SHARED_DIR}"/*/; do
     [ -d "${tool_dir}.pixi/envs/default" ] || continue
     tool_name=$(basename "${tool_dir}")
 
+    # Through `ai-tools run`, like the kernels: the user's own copy if there is
+    # one (made on the spot on a per-user workspace), otherwise the shared one.
+    # A shell in the shared environment would send `pip install` to ~/.local,
+    # where every environment on the same Python version picks it up.
     cat > "${DESKTOP_DIR}/pixi-${tool_name}-terminal.desktop" << DESKTOP_TERM
 [Desktop Entry]
 Type=Application
 Name=${tool_name} (Pixi Terminal)
-Comment=Open a shell in the shared ${tool_name} environment
-Exec=bash -c "cd ${tool_dir} && ${PIXI_BIN} shell --frozen"
+Comment=Open a shell in the ${tool_name} environment
+Exec=ai-tools run ${tool_name} bash
 Terminal=true
 Categories=Development;IDE;
 Icon=utilities-terminal

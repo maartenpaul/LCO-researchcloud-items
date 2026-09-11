@@ -6,8 +6,11 @@
 #
 # Two things it adds over a bare "pixi run":
 #
-#   1. A user's own copy of a tool (see "ai-tools fork") wins over the shared
-#      one, so a forked environment is what the menu entry launches.
+#   1. It runs through `ai-tools run`, the same as the Jupyter kernels, so the
+#      menu entry and the kernel use the same environment — the user's own
+#      copy when there is one. A napari plugin installed with "%pip install"
+#      in a notebook is therefore also there when napari is opened from the
+#      menu.
 #   2. OpenGL is routed to the GPU through VirtualGL when that is possible.
 #      TigerVNC's own GL is llvmpipe, i.e. software. That is fast enough for 2D
 #      images but not for volume rendering: a 256^3 MIP rotation in napari
@@ -17,13 +20,8 @@
 
 set -euo pipefail
 
-SHARED_DIR="${SHARED_DIR:-/opt/AI_tools_pixi}"
-PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-/opt/pixi-cache}"
-PIXI_BIN="${PIXI_BIN:-/usr/local/bin/pixi}"
+AI_TOOLS="${AI_TOOLS:-/usr/local/bin/ai-tools}"
 VGLRUN="${VGLRUN:-/opt/VirtualGL/bin/vglrun}"
-MY_DIR="${HOME}/AI_tools_pixi"
-
-export PIXI_CACHE_DIR
 
 if [ $# -lt 1 ]; then
     echo "Usage: ai-tools-gui <tool> [command ...]" >&2
@@ -34,28 +32,13 @@ fi
 tool="$1"
 shift
 
-# A fork only counts once it has actually been built, matching 'ai-tools list'.
-if [ -d "${MY_DIR}/${tool}/.pixi/envs/default" ]; then
-    manifest="${MY_DIR}/${tool}/pixi.toml"
-else
-    manifest="${SHARED_DIR}/${tool}/pixi.toml"
-fi
-
-if [ ! -f "${manifest}" ]; then
-    echo "ai-tools-gui: no environment for tool '${tool}'." >&2
-    echo "Run 'ai-tools list' to see the available tools." >&2
-    exit 1
-fi
-
 # No command given: run the program that shares the tool's name.
 [ $# -gt 0 ] || set -- "${tool}"
 
-# --frozen means "use the lock file as-is": no solve and no write to the shared
-# checkout, which users cannot write to anyway.
-run=("${PIXI_BIN}" run --frozen --manifest-path "${manifest}" "$@")
+run=("${AI_TOOLS}" run "${tool}" "$@")
 
 # VirtualGL is only useful on a real display and only with an NVIDIA device for
-# its EGL back end. Without either, fall through to plain pixi run — Qt still
+# its EGL back end. Without either, run it directly — Qt still
 # works, it just renders in software.
 if [ -n "${DISPLAY:-}" ] && [ -x "${VGLRUN}" ] && [ -c /dev/nvidiactl ]; then
     exec "${VGLRUN}" -d "${VGL_EGL_DEVICE:-egl}" "${run[@]}"

@@ -36,7 +36,7 @@ Deploys [Pixi](https://pixi.sh)-based AI/ML bioimage analysis tool environments 
 | `tasks/jupyterhub.yml` | pixi-kernel, pre-spawn hook, kernel allowlist override |
 | `files/setup-ai-tools.sh` | Per-user runonce script (completion, launchers, cleanup) |
 | `files/run-runonce.sh` | Runonce wrapper for the JupyterHub pre-spawn hook |
-| `files/ai-tools` | User helper: list / fork / reset shared environments |
+| `files/ai-tools` | User helper: list / fork / reset copies; `run` picks the user's copy or the shared env for kernels and launchers |
 | `files/ai-tools-gui` | Launches a GUI tool from its environment, on the GPU via VirtualGL |
 | `files/ai-tools-kernel` | Wraps a kernel in `xvfb-run` so Qt works inside notebooks |
 | `files/ai-tools-lab` | Starts JupyterLab from the desktop, rooted at `$HOME` |
@@ -59,22 +59,30 @@ SRC also ships **two** venvs. `/etc/src/venv/src-venv` is the tooling venv; the 
 
 A per-user copy of every environment does not fit on a teaching VM: each env with PyTorch + CUDA is 5–10 GB, and a per-user package cache duplicates the downloads on top of that. A class of 20 would need multiple terabytes.
 
-Instead there is one root-owned copy in `/opt/AI_tools_pixi` and one shared cache. Kernels run it with `pixi run --frozen`, which uses the lock file as-is: no solve, no writes to `/opt`, and the kernel starts in seconds instead of timing out behind a multi-GB install.
+Instead there is one root-owned copy in `/opt/AI_tools_pixi` and one shared cache. Kernels run it with `pixi run --frozen`, which uses the lock file as-is: no solve, no writes to `/opt`, and the kernel starts in seconds instead of timing out behind a multi-GB install. A user's own copy (below) is cheap precisely because of this: it is hardlinked out of the cache the shared install filled.
 
 Users cannot write to `/opt`, so **only pre-installed tools get a shared kernel.**
 
 ## Adding packages: `ai-tools`
 
-Students who need extra packages fork an environment into their home directory:
+Students who need extra packages work in their own copy of a tool, in `~/AI_tools_pixi/<tool>`:
 
 ```bash
 ai-tools list            # what is available, and what you have your own copy of
-ai-tools fork cellpose   # your own editable copy in ~/AI_tools_pixi/cellpose
+ai-tools fork cellpose   # make your own copy in ~/AI_tools_pixi/cellpose
 cd ~/AI_tools_pixi/cellpose && pixi add scikit-image
-ai-tools reset cellpose  # throw your copy away, go back to the shared one
+ai-tools reset cellpose  # throw your copy away
 ```
 
-A fork copies only `pixi.toml` + `pixi.lock` and reinstalls from the **shared cache**. Because pixi hardlinks package files out of the cache (same filesystem), a fork costs a fraction of the environment's apparent size — measured at **74 MB of real disk for a 1.3 GB environment**. The fork shows up in JupyterLab as `<tool> (Pixi, mine)`, alongside the shared `<tool> (Pixi, shared)`.
+A copy is made from the shared manifest and lock file and installed from the **shared cache**. Because pixi hardlinks package files out of the cache (same filesystem), it costs a fraction of the environment's apparent size — measured at **0.1–0.4 GB of real disk per tool, ~3 GB for all nine**. Tools without pip get the one Python bundles (`ensurepip`), so `%pip install` works in every copy.
+
+There is **one kernel per tool**, `<tool> (Pixi)`, and it decides at start-up which environment to use (`ai-tools run`): your copy if you have one, otherwise the shared one. The menu entries go through the same path, so a napari plugin added in a notebook is also there in napari from the menu.
+
+### Per-user environments (`PIXI_AI_TOOLS_PER_USER_ENVS`)
+
+On a workspace for one student or a pair, set `PIXI_AI_TOOLS_PER_USER_ENVS=true` and nobody needs to know about `ai-tools` at all: the first time a user starts a tool's kernel or menu entry, their copy is made on the spot (1–7 s), and from then on `%pip install <package>` in a notebook installs into it and imports straight away. If a copy cannot be made, the kernel falls back to the shared environment and says so in the Jupyter log.
+
+The shared environments in `/opt` remain the source of truth — every copy is made from them — and the warm cache that makes copying fast. A redeploy updates `/opt` only: existing copies keep their versions until the user runs `ai-tools reset <tool>`, after which the next start makes a fresh one. Leave this off on a workspace shared by many users; 30 students would add ~90 GB.
 
 The shared cache is group-writable via a default ACL for the workspace group, so `pixi add` works for users even though root wrote the cache first. A plain `1777` directory is not enough — pixi opens the repodata cache read-write, and root's files inside would be `644 root:root`.
 
@@ -87,6 +95,7 @@ Declare these in step 3 of the component wizard. SRC hands each parameter to the
 | `PIXI_AI_TOOLS_VERSION` | `master` | Git branch or tag of AI_tools_pixi to deploy |
 | `PIXI_AI_TOOLS_PRELOAD` | `all` | Comma-separated tools to pre-install, or `all`. Only pre-installed tools get a shared kernel. |
 | `PIXI_AI_TOOLS_DESKTOP` | `false` | Install the remote desktop so GUI tools such as napari can be used. Adds ~200 packages and ~1 GB. Install-only — see below. |
+| `PIXI_AI_TOOLS_PER_USER_ENVS` | `false` | Give each user their own copy of a tool on first use, so `%pip install` works. For workspaces with one or two users — see [Per-user environments](#per-user-environments-pixi_ai_tools_per_user_envs). |
 
 **Set `PIXI_AI_TOOLS_PRELOAD` to just the tools your course uses.** `all` pre-installs eight environments (~50 GB, a long deploy). Something like `cellpose,stardist,CAREamics` keeps the deploy short. This cost is paid once, at deploy time, before any student logs in — never on a student's first kernel click.
 
@@ -259,7 +268,7 @@ Both come from the desktop phase, so this means `PIXI_AI_TOOLS_DESKTOP` was not 
 
 **A kernel dies immediately.** Its environment was probably not pre-installed (`--frozen` fails when the env is missing). Run `ai-tools list` — anything showing `not built` has no usable shared kernel; add it to `PIXI_AI_TOOLS_PRELOAD` and re-run the playbook.
 
-**A user's kernel shadows the shared one.** Kernelspecs in `~/.local/share/jupyter/kernels` win over system ones with the same name. The role removes per-user `pixi-<tool>` kernels that point at a home-directory clone; personal forks (`pixi-<tool>-mine`) use a distinct name and are left alone.
+**A user's kernel shadows the shared one.** Kernelspecs in `~/.local/share/jupyter/kernels` win over system ones with the same name. The role removes per-user kernels that point at a home-directory copy — both the old `pixi-<tool>` clones and the `pixi-<tool>-mine` kernels earlier versions of `ai-tools fork` registered, which the tool's own kernel now replaces. Only the kernelspecs go; the copies in `~/AI_tools_pixi` stay and are used.
 
 **The Desktop tile is missing from the launcher.** Check that the extension landed in the venv that actually spawns single-user servers, and that the hub was restarted afterwards:
 

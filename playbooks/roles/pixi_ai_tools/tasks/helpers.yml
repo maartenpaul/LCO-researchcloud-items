@@ -18,6 +18,19 @@
     owner: root
     group: root
 
+# Read by ai-tools at every kernel start, which is why it is a file rather than
+# something baked into each kernelspec: switching the mode on a redeploy
+# changes it for every kernel and menu entry at once.
+- name: Record whether users get their own copy of each tool
+  ansible.builtin.copy:
+    dest: /etc/ai-tools.conf
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      # Written by the pixi-ai-tools component (PIXI_AI_TOOLS_PER_USER_ENVS).
+      PER_USER_ENVS={{ 'true' if pixi_ai_tools_per_user_envs | bool else 'false' }}
+
 - name: Install the napari plugin probe used to decide which tools get a launcher
   ansible.builtin.copy:
     src: ai-tools-has-gui

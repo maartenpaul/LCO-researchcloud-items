@@ -1,23 +1,38 @@
 #!/bin/bash
-# ai-tools — work with the shared Pixi AI tool environments.
+# ai-tools — work with the Pixi AI tool environments.
 #
-# The environments in /opt/AI_tools_pixi are shared by every user on this
-# workspace and are read-only. To add packages you need your own copy: "fork"
-# makes one in your home directory. Because the package cache is shared and
-# pixi hardlinks package files out of it, a fork typically costs a fraction of
-# the environment's apparent size and takes seconds rather than minutes.
+# The environments in /opt/AI_tools_pixi are installed by the deploy, are
+# read-only, and are the source of truth: every copy is made from their
+# manifest and lock file. A user's own copy lives in ~/AI_tools_pixi/<tool>.
+# Because the package cache is shared and pixi hardlinks package files out of
+# it, a copy costs a fraction of the environment's apparent size — measured at
+# 0.1-0.4 GB against 5-10 GB apparent — and takes seconds rather than minutes.
+#
+# Whichever environment a tool runs from is decided in one place, `ai-tools
+# run`, which the Jupyter kernels and the menu entries all go through: the
+# user's copy if there is one, otherwise the shared environment. On workspaces
+# deployed with per-user environments switched on (PER_USER_ENVS in
+# /etc/ai-tools.conf), a missing copy is made on first use, so every user works
+# in an environment they can install into — `%pip install` in a notebook just
+# works — without anyone having to know this script exists.
 
 set -euo pipefail
 
 SHARED_DIR="${SHARED_DIR:-/opt/AI_tools_pixi}"
 PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-/opt/pixi-cache}"
 PIXI_BIN="${PIXI_BIN:-/usr/local/bin/pixi}"
-KERNEL_WRAPPER="${KERNEL_WRAPPER:-/usr/local/bin/ai-tools-kernel}"
+AI_TOOLS_CONF="${AI_TOOLS_CONF:-/etc/ai-tools.conf}"
 MY_DIR="${HOME}/AI_tools_pixi"
 # Infrastructure, not a tool: this environment holds the JupyterLab server, has
-# no kernel, and there is nothing useful to fork out of it.
+# no kernel, and there is nothing useful to copy out of it.
 LAB_ENV="${LAB_ENV:-jupyterlab}"
 KERNEL_DIR="${HOME}/.local/share/jupyter/kernels"
+
+PER_USER_ENVS=false
+if [ -r "${AI_TOOLS_CONF}" ]; then
+    # shellcheck source=/dev/null
+    . "${AI_TOOLS_CONF}"
+fi
 
 export PIXI_CACHE_DIR
 
@@ -27,13 +42,14 @@ Usage: ai-tools <command> [tool]
 
 Commands:
   list                 Show the available tools and whether you have your own copy
-  fork <tool>          Make your own editable copy of <tool> so you can add packages
-  reset <tool>         Delete your copy of <tool> and go back to the shared one
+  fork <tool>          Make your own copy of <tool> so you can add packages to it
+  reset <tool>         Delete your copy of <tool> and go back to a fresh one
+  run <tool> <cmd...>  Run a command in <tool>, from your copy if you have one
 
-After forking, add packages like this:
-  cd ~/AI_tools_pixi/<tool> && pixi add scikit-image
-
-Your copy appears in JupyterLab as "<tool> (Pixi, mine)".
+Your copy is used automatically: the "<tool> (Pixi)" kernel in JupyterLab and
+the menu entries all run from it once it exists. Add packages with
+  %pip install <package>                                 (in a notebook)
+  cd ~/AI_tools_pixi/<tool> && pixi add <package>        (in a terminal)
 EOF
 }
 
@@ -56,6 +72,58 @@ available_tools() {
     done
 }
 
+is_tool() {
+    [ -n "$1" ] && [ "$1" != "${LAB_ENV}" ] && [ -f "${SHARED_DIR}/$1/pixi.toml" ]
+}
+
+# Build ~/AI_tools_pixi/<tool> from the shared manifest and lock file. All output
+# goes to stderr: this also runs at kernel start, where stdout is not ours.
+#
+# Called in an `if`, where bash ignores `set -e` — including inside this
+# function — so every step that can fail says so explicitly.
+make_copy() {
+    local tool="$1"
+    local dest="${MY_DIR}/${tool}"
+    mkdir -p "${MY_DIR}" || return 1
+    (
+        # JupyterLab restores every open notebook at once, so two kernels for
+        # the same tool can both find the copy missing. The second waits here
+        # and then finds it built.
+        flock 9 || exit 1
+        env_is_built "${dest}/.pixi/envs/default" && exit 0
+
+        if [ -d "${dest}" ]; then
+            echo "ai-tools: finishing an earlier copy of '${tool}' at ${dest}..." >&2
+        else
+            echo "ai-tools: creating your own copy of '${tool}' at ${dest}..." >&2
+        fi
+        mkdir -p "${dest}" || exit 1
+        # Only the manifest and lock file — never the shared .pixi/ directory.
+        # pixi rebuilds the environment from the lock, hardlinking out of the
+        # shared cache, so the packages are not duplicated on disk.
+        #
+        # An existing file is left alone: an earlier attempt may have been
+        # interrupted after the user already edited the manifest.
+        for manifest_file in pixi.toml pixi.lock; do
+            if [ -f "${SHARED_DIR}/${tool}/${manifest_file}" ] && [ ! -f "${dest}/${manifest_file}" ]; then
+                cp "${SHARED_DIR}/${tool}/${manifest_file}" "${dest}/" || exit 1
+            fi
+        done
+        "${PIXI_BIN}" install --manifest-path "${dest}/pixi.toml" >&2 || exit 1
+
+        # Several tool environments ship no pip, and "%pip install" in a
+        # notebook then fails with "No module named pip". Adding pip to their
+        # manifests would mean relocking them, which re-solves the PyPI side
+        # and moves torch and CUDA along with it; ensurepip puts the pip that
+        # Python bundles into this copy alone. It survives later `pixi install`
+        # and `pixi add`, which leave packages they did not install alone.
+        local python="${dest}/.pixi/envs/default/bin/python"
+        if ! "${python}" -m pip --version >/dev/null 2>&1; then
+            "${python}" -m ensurepip >&2 || exit 1
+        fi
+    ) 9>"${MY_DIR}/.${tool}.lock"
+}
+
 cmd_list() {
     printf '%-16s %-12s %s\n' "TOOL" "SHARED" "YOUR COPY"
     for tool in $(available_tools); do
@@ -64,12 +132,14 @@ cmd_list() {
         else
             shared="not built"
         fi
-        # A plain checkout of the repo in $HOME is not a fork — only an actually
+        # A plain checkout of the repo in $HOME is not a copy — only an actually
         # built environment counts.
         if env_is_built "${MY_DIR}/${tool}/.pixi/envs/default"; then
             mine="yes (~/AI_tools_pixi/${tool})"
         elif [ -d "${MY_DIR}/${tool}" ]; then
             mine="incomplete — run 'ai-tools fork ${tool}' again"
+        elif [ "${PER_USER_ENVS}" = true ]; then
+            mine="- (made when you first use it)"
         else
             mine="-"
         fi
@@ -77,76 +147,38 @@ cmd_list() {
     done
 }
 
+# Kernels registered by earlier versions of `fork`. The tool's own kernel now
+# runs from the copy, so this one would be a second entry for the same thing.
+remove_old_fork_kernel() {
+    rm -rf "${KERNEL_DIR}/pixi-$1-mine"
+}
+
 cmd_fork() {
     local tool="${1:-}"
-    if [ -z "${tool}" ] || [ ! -f "${SHARED_DIR}/${tool}/pixi.toml" ]; then
+    if ! is_tool "${tool}"; then
         echo "Unknown tool: '${tool:-}'. Run 'ai-tools list' to see the options." >&2
         exit 1
     fi
 
     local dest="${MY_DIR}/${tool}"
     if env_is_built "${dest}/.pixi/envs/default"; then
+        remove_old_fork_kernel "${tool}"
         echo "You already have a copy at ${dest}."
         echo "Add packages with: cd ${dest} && pixi add <package>"
         exit 0
     fi
 
-    if [ -d "${dest}" ]; then
-        echo "Finishing an earlier copy of '${tool}' at ${dest} that did not complete..."
-    else
-        echo "Creating your own copy of '${tool}' at ${dest}..."
+    if ! make_copy "${tool}"; then
+        echo "Could not create your copy of '${tool}'. Nothing else was changed." >&2
+        exit 1
     fi
-    mkdir -p "${dest}"
-    # Copy only the manifest and lock file — never the shared .pixi/ directory.
-    # pixi rebuilds the environment from the lock, hardlinking from the shared
-    # cache, so the packages are not duplicated on disk.
-    #
-    # An existing file is left alone: a previous fork attempt may have been
-    # interrupted after the user already edited the manifest. Testing for the
-    # file beats `cp -n`, which warns that its behaviour is non-portable on
-    # current coreutils. The lock file is optional, and under `set -e` a bare
-    # `[ -f ... ] && cp ...` would abort the whole fork for a tool that has none.
-    for manifest_file in pixi.toml pixi.lock; do
-        if [ -f "${SHARED_DIR}/${tool}/${manifest_file}" ] && [ ! -f "${dest}/${manifest_file}" ]; then
-            cp "${SHARED_DIR}/${tool}/${manifest_file}" "${dest}/"
-        fi
-    done
-
-    echo "Installing (reusing the shared package cache — this should be quick)..."
-    "${PIXI_BIN}" install --manifest-path "${dest}/pixi.toml"
-
-    mkdir -p "${KERNEL_DIR}/pixi-${tool}-mine"
-    # Match the shared kernels: when the workspace has the desktop installed,
-    # run under the wrapper that gives the kernel a private X display, so that
-    # napari works in a notebook here too.
-    if [ -x "${KERNEL_WRAPPER}" ]; then
-        kernel_prefix="\"${KERNEL_WRAPPER}\","
-    else
-        kernel_prefix=""
-    fi
-    cat > "${KERNEL_DIR}/pixi-${tool}-mine/kernel.json" <<KERNEL_JSON
-{
-  "argv": [
-    ${kernel_prefix}
-    "${PIXI_BIN}",
-    "run",
-    "--manifest-path", "${dest}/pixi.toml",
-    "python", "-m", "ipykernel_launcher",
-    "-f", "{connection_file}"
-  ],
-  "display_name": "${tool} (Pixi, mine)",
-  "language": "python",
-  "env": {
-    "PIXI_CACHE_DIR": "${PIXI_CACHE_DIR}"
-  }
-}
-KERNEL_JSON
+    remove_old_fork_kernel "${tool}"
 
     echo
     echo "Done. Your copy is at ${dest}"
-    echo "  Add packages:  cd ${dest} && pixi add <package>"
-    echo "  In JupyterLab: pick the kernel '${tool} (Pixi, mine)'"
-    echo "  (Reload the JupyterLab browser tab for the new kernel to appear.)"
+    echo "  In a notebook: %pip install <package>   (with the '${tool} (Pixi)' kernel)"
+    echo "  In a terminal: cd ${dest} && pixi add <package>"
+    echo "  Kernels that were already running keep the old environment; restart them."
 }
 
 cmd_reset() {
@@ -162,13 +194,50 @@ cmd_reset() {
         echo "Not confirmed; nothing deleted."
         exit 1
     fi
-    rm -rf "${dest}" "${KERNEL_DIR}/pixi-${tool}-mine"
-    echo "Removed. You are back to the shared '${tool}' environment."
+    rm -rf "${dest}" "${MY_DIR}/.${tool}.lock"
+    remove_old_fork_kernel "${tool}"
+    if [ "${PER_USER_ENVS}" = true ]; then
+        echo "Removed. A fresh copy of '${tool}' is made the next time you start it."
+    else
+        echo "Removed. You are back to the shared '${tool}' environment."
+    fi
+}
+
+cmd_run() {
+    local tool="${1:-}"
+    if ! is_tool "${tool}"; then
+        echo "ai-tools: unknown tool '${tool:-}'. Run 'ai-tools list' to see the options." >&2
+        exit 1
+    fi
+    shift
+    if [ $# -eq 0 ]; then
+        echo "Usage: ai-tools run <tool> <command ...>" >&2
+        exit 2
+    fi
+
+    local mine="${MY_DIR}/${tool}"
+    if [ "${PER_USER_ENVS}" = true ] && ! env_is_built "${mine}/.pixi/envs/default"; then
+        # Falling back beats failing: a kernel on the shared environment still
+        # runs every notebook that needs nothing extra.
+        if ! make_copy "${tool}"; then
+            echo "ai-tools: could not create your copy of '${tool}'; using the shared, read-only one." >&2
+        fi
+    fi
+
+    if env_is_built "${mine}/.pixi/envs/default"; then
+        # Not --frozen: the copy is the user's to change, and after a hand edit
+        # of its pixi.toml the lock should follow rather than be ignored.
+        exec "${PIXI_BIN}" run --manifest-path "${mine}/pixi.toml" "$@"
+    fi
+    # --frozen: use the lock as-is — no solve, and no write to the shared
+    # checkout, which users cannot write to anyway.
+    exec "${PIXI_BIN}" run --frozen --manifest-path "${SHARED_DIR}/${tool}/pixi.toml" "$@"
 }
 
 case "${1:-}" in
     list)  cmd_list ;;
     fork)  cmd_fork "${2:-}" ;;
     reset) cmd_reset "${2:-}" ;;
+    run)   shift; cmd_run "$@" ;;
     *)     usage ;;
 esac
