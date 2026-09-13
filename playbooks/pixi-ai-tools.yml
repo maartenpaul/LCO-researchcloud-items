@@ -23,6 +23,12 @@
 #                            back to false skips the phase but does not remove
 #                            a desktop already installed — redeploy from
 #                            scratch for that.
+#   PIXI_AI_TOOLS_NVIDIA_DRIVER
+#                          — NVIDIA driver branch to install when a GPU is
+#                            present but has no working driver (default:
+#                            "580"). A fallback for catalog items without SRC's
+#                            CUDA component; a working driver is left alone.
+#                            "none" disables it.
 #
 # Uses the uusrc.general Ansible collection (see requirements.yml).
 

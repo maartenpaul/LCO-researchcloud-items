@@ -17,7 +17,8 @@
 - name: Set up the per-user runonce mechanism
   ansible.builtin.import_tasks: runonce.yml
 
-- name: Report GPU availability
+# Before render.yml, which decides on VirtualGL from the driver's device node.
+- name: Make sure a GPU that is present has a working driver
   ansible.builtin.import_tasks: gpu.yml
 
 # Before the shared checkout, which needs to know whether this workspace has a
