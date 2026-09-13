@@ -27,7 +27,7 @@ Deploys [Pixi](https://pixi.sh)-based AI/ML bioimage analysis tool environments 
 | `tasks/main.yml` | Preflight checks, then imports the phase files below |
 | `tasks/pixi.yml` | System packages + global Pixi install |
 | `tasks/runonce.yml` | `uusrc.general.runonce` role + per-user setup script |
-| `tasks/gpu.yml` | NVIDIA GPU detection (informational only) |
+| `tasks/gpu.yml` | NVIDIA GPU detection; installs a pinned driver when a GPU has none |
 | `tasks/shared_env.yml` | Shared checkout, shared cache + ACLs, environment preload |
 | `tasks/kernels.yml` | System-wide kernelspecs, stale-kernel cleanup, `ai-tools` helper |
 | `tasks/jupyter_venv.yml` | Locates the venv JupyterHub spawns single-user servers from |
@@ -96,6 +96,7 @@ Declare these in step 3 of the component wizard. SRC hands each parameter to the
 | `PIXI_AI_TOOLS_PRELOAD` | `all` | Comma-separated tools to pre-install, or `all`. Only pre-installed tools get a shared kernel. |
 | `PIXI_AI_TOOLS_DESKTOP` | `false` | Install the remote desktop so GUI tools such as napari can be used. Adds ~200 packages and ~1 GB. Install-only — see below. |
 | `PIXI_AI_TOOLS_PER_USER_ENVS` | `false` | Give each user their own copy of a tool on first use, so `%pip install` works. For workspaces with one or two users — see [Per-user environments](#per-user-environments-pixi_ai_tools_per_user_envs). |
+| `PIXI_AI_TOOLS_NVIDIA_DRIVER` | `580` | NVIDIA driver branch to install when a GPU is present but `nvidia-smi` does not work. A fallback for catalog items without SRC's CUDA component; a working driver is left alone. `none` disables it. |
 
 **Set `PIXI_AI_TOOLS_PRELOAD` to just the tools your course uses.** `all` pre-installs eight environments (~50 GB, a long deploy). Something like `cellpose,stardist,CAREamics` keeps the deploy short. This cost is paid once, at deploy time, before any student logs in — never on a student's first kernel click.
 
@@ -179,6 +180,7 @@ Moving the framebuffer next to the application is the large win, and it applies 
 | SRC-External | Yes | Internet access for git clone + package downloads |
 | Jupyter component | No | If present, kernels appear in JupyterLab automatically |
 | GPU flavor | No | Recommended for the CUDA tools |
+| CUDA component | No | Without it, the NVIDIA driver is installed by this component (`PIXI_AI_TOOLS_NVIDIA_DRIVER`) |
 
 Disk: size the VM for the shared install (~50 GB for all eight environments) plus room for student forks and data.
 

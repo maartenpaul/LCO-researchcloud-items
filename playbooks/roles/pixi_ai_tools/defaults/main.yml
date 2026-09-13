@@ -56,6 +56,19 @@ pixi_ai_tools_pixi_version: >-
   {{ PIXI_AI_TOOLS_PIXI_VERSION | default(lookup('env', 'PIXI_AI_TOOLS_PIXI_VERSION'), true)
      | default('0.78.0', true) }}
 
+# NVIDIA driver branch to install when a GPU is present but nvidia-smi does not
+# work — normally because SRC's CUDA component was left out of the catalog item.
+# Never touches a working driver. Pinned to a branch because the unpinned
+# `cuda-drivers` package follows NVIDIA's newest release, which is what broke
+# SRC's component in September 2026. "none" disables the fallback.
+# 580 was verified on an A10 workspace with Ubuntu 24.04.
+pixi_ai_tools_nvidia_driver: >-
+  {{ PIXI_AI_TOOLS_NVIDIA_DRIVER | default(lookup('env', 'PIXI_AI_TOOLS_NVIDIA_DRIVER'), true)
+     | default('580', true) }}
+pixi_ai_tools_cuda_keyring_url: >-
+  https://developer.download.nvidia.com/compute/cuda/repos/ubuntu{{
+  ansible_facts['distribution_version'] | replace('.', '') }}/x86_64/cuda-keyring_1.1-1_all.deb
+
 pixi_ai_tools_home: /usr/local
 pixi_ai_tools_bin: /usr/local/bin/pixi
 pixi_ai_tools_runonce_dir: /etc/runonce.d
