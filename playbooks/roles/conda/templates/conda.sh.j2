@@ -16,8 +16,12 @@ if [ -f "{{ conda_dir }}/etc/profile.d/conda.sh" ]; then
     . "{{ conda_dir }}/etc/profile.d/conda.sh"
 fi
 
-# Miniforge ships mamba; its hook is what makes `mamba activate` work.
+# Miniforge ships mamba; its hook is what makes `mamba activate` work. mamba 2
+# wants MAMBA_ROOT_PREFIX set: without it the hook still guesses the right
+# prefix, but prints a ten-line warning about it on every single conda or mamba
+# command, which is the first thing a student would see.
 if [ -f "{{ conda_dir }}/etc/profile.d/mamba.sh" ]; then
+    export MAMBA_ROOT_PREFIX="{{ conda_dir }}"
     # shellcheck source=/dev/null
     . "{{ conda_dir }}/etc/profile.d/mamba.sh"
 fi
