@@ -11,6 +11,7 @@ Each component is one **entry-point playbook** in `playbooks/` — the path regi
 | **Pixi AI Tools** — installs [Pixi](https://pixi.sh) and deploys the [AI_tools_pixi](https://github.com/Leiden-Cell-Observatory/AI_tools_pixi) bioimage analysis environments as one shared, root-owned install with system-wide Jupyter kernels | [`playbooks/pixi-ai-tools.yml`](playbooks/pixi-ai-tools.yml) | [roles/pixi_ai_tools](playbooks/roles/pixi_ai_tools/README.md) |
 | **QuPath** — installs [QuPath](https://qupath.github.io/) with preconfigured preferences and extensions | [`playbooks/qupath.yml`](playbooks/qupath.yml) | [roles/qupath](playbooks/roles/qupath/README.md) |
 | **OMERO** — deploys [OMERO.server + OMERO.web](https://github.com/ome/docker-example-omero) with Docker behind the SRC nginx proxy, with optional SRAM authentication or direct HTTPS access and optional bind-mounted data storage | [`playbooks/omero.yml`](playbooks/omero.yml) | [roles/omero](playbooks/roles/omero/README.md) |
+| **conda** — installs [Miniforge](https://github.com/conda-forge/miniforge) system-wide and puts `conda` in every user's shell, without activating base | [`playbooks/conda.yml`](playbooks/conda.yml) | [roles/conda](playbooks/roles/conda/README.md) |
 
 ## Repository layout
 
@@ -19,6 +20,7 @@ playbooks/
 ├── pixi-ai-tools.yml            # SRC entry point → role pixi_ai_tools
 ├── qupath.yml                   # SRC entry point → role qupath
 ├── omero.yml                    # SRC entry point → role omero
+├── conda.yml                    # SRC entry point → role conda
 ├── requirements.yml             # Ansible collection deps (uusrc.general)
 └── roles/
     ├── pixi_ai_tools/
@@ -32,12 +34,17 @@ playbooks/
     │   ├── tasks/main.yml
     │   ├── templates/           # .desktop launcher
     │   └── files/               # groovy script + preferences
-    └── omero/
+    ├── omero/
+    │   ├── README.md
+    │   ├── defaults/main.yml    # SRC parameters + paths
+    │   ├── handlers/main.yml    # nginx reload
+    │   ├── tasks/               # main.yml + one file per phase
+    │   └── templates/           # compose file + nginx configs
+    └── conda/
         ├── README.md
         ├── defaults/main.yml    # SRC parameters + paths
-        ├── handlers/main.yml    # nginx reload
-        ├── tasks/               # main.yml + one file per phase
-        └── templates/           # compose file + nginx configs
+        ├── tasks/main.yml
+        └── templates/           # condarc + shell hook
 ```
 
 Roles live under `playbooks/roles/` because Ansible resolves that directory relative to the playbook itself — no `ansible.cfg` or `roles_path` needed, whatever working directory SRC runs from.

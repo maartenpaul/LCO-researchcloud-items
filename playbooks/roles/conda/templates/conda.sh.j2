@@ -1,0 +1,27 @@
+#!/bin/sh
+# {{ conda_profile_snippet }} — installed by the LCO conda component.
+#
+# Sources conda's own shell hook, which defines the `conda` shell function and
+# nothing else. PATH is deliberately left alone: an activated base environment
+# puts conda's python and pip ahead of the system ones and ahead of the pixi
+# shims, which breaks the AI tools component and the SRC jupyter venv. Users
+# opt in per shell with `conda activate <env>`.
+#
+# This file runs for login shells. Interactive non-login shells (a terminal in
+# the XFCE desktop, tmux, a shell inside JupyterLab) read /etc/bash.bashrc
+# instead, which the role makes source this same file.
+
+if [ -f "{{ conda_dir }}/etc/profile.d/conda.sh" ]; then
+    # shellcheck source=/dev/null
+    . "{{ conda_dir }}/etc/profile.d/conda.sh"
+fi
+
+# Miniforge ships mamba; its hook is what makes `mamba activate` work.
+if [ -f "{{ conda_dir }}/etc/profile.d/mamba.sh" ]; then
+    # shellcheck source=/dev/null
+    . "{{ conda_dir }}/etc/profile.d/mamba.sh"
+fi
+{% if conda_auto_activate | bool %}
+
+conda activate base
+{% endif %}

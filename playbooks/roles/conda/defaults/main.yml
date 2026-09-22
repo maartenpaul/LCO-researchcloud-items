@@ -1,0 +1,42 @@
+---
+# SRC parameters. A component parameter reaches an Ansible playbook as a
+# variable named after its key — not as an environment variable. The env lookup
+# is kept only as a fallback so the role can be driven from a shell when testing
+# outside SRC.
+
+# Miniforge release tag (https://github.com/conda-forge/miniforge/releases),
+# which is also the conda version it ships. Pinned for the same reason pixi is:
+# two workspaces deployed from the same component version should get the same
+# conda. Changing it re-runs the installer over the existing prefix with -u,
+# which upgrades in place and leaves user environments alone.
+conda_version: >-
+  {{ CONDA_VERSION | default(lookup('env', 'CONDA_VERSION'), true)
+     | default('26.7.2-0', true) }}
+
+# Activate the base environment in every login shell. Off, and it should stay
+# off: an activated base puts conda's python and pip ahead of the system ones
+# and ahead of the pixi shims, which breaks the AI tools component and the SRC
+# jupyter venv. With it off the shell hook only defines the `conda` function,
+# leaving PATH alone until someone runs `conda activate`.
+conda_auto_activate: >-
+  {{ CONDA_AUTO_ACTIVATE | default(lookup('env', 'CONDA_AUTO_ACTIVATE'), true)
+     | default(false, true) }}
+
+# Miniforge, not Miniconda: it defaults to conda-forge only. Anaconda's
+# `defaults` channel needs a paid licence for organisations above 200 people,
+# and a university is well past that, so nothing here may add it.
+conda_installer_url: >-
+  https://github.com/conda-forge/miniforge/releases/download/{{
+  conda_version }}/Miniforge3-Linux-x86_64.sh
+
+conda_dir: /opt/conda
+# One shared, root-owned package cache, like /opt/pixi-cache. Environments are
+# per-user (~/.conda/envs) but hardlink their packages out of here, so a second
+# user creating the same environment costs seconds and almost no disk. If no
+# shared group is found the cache stays root-only and conda silently falls back
+# to each user's own ~/.conda/pkgs — slower and fatter, but not broken.
+conda_pkgs_dir: /opt/conda-pkgs
+conda_condarc: /etc/conda/condarc
+conda_profile_snippet: /etc/profile.d/zz-conda.sh
+conda_channels:
+  - conda-forge

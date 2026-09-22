@@ -1,0 +1,27 @@
+---
+# conda.yml — SURF Research Cloud component entry point.
+#
+# Installs Miniforge system-wide and makes `conda` available in every user's
+# shell, without activating base. All logic lives in roles/conda; see its README
+# for details.
+#
+# SRC Parameters. Declared in the component wizard; SRC passes each one to this
+# playbook as an Ansible variable named after its key. The role also accepts the
+# same names as environment variables, which is only meant for testing outside
+# SRC.
+#   CONDA_VERSION        — Miniforge release tag to install (default
+#                          "26.7.2-0"). Pinned so redeploys are reproducible;
+#                          bumping it upgrades the install in place and leaves
+#                          user environments alone.
+#   CONDA_AUTO_ACTIVATE  — Activate the base environment in every shell
+#                          (default: false). Leave it off on any workspace that
+#                          also runs the Pixi AI Tools component: an activated
+#                          base puts conda's python and pip ahead of the pixi
+#                          shims and the SRC jupyter venv.
+
+- name: Install conda
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - conda

@@ -1,0 +1,32 @@
+---
+# {{ conda_condarc }} — installed by the LCO conda component.
+# System-wide conda configuration: read by every user, overridable per user in
+# ~/.condarc.
+
+channels:
+{% for channel in conda_channels %}
+  - {{ channel }}
+{% endfor %}
+
+# conda-forge only, and strictly. Mixing in Anaconda's `defaults` channel is
+# both a licensing problem for an organisation this size and the usual cause of
+# environments that solve but do not run.
+channel_priority: strict
+
+# Shared package cache first. conda uses the first directory it can write to,
+# so if the shared one is root-only this silently becomes ~/.conda/pkgs.
+pkgs_dirs:
+  - {{ conda_pkgs_dir }}
+  - ~/.conda/pkgs
+
+# Do not activate base in every shell — see the comment in the profile snippet.
+# `auto_activate` is the current name. `auto_activate_base` is what conda older
+# than 25.9 reads, and is written only for such a pin: on a current conda it
+# still works but is deprecated, and printing a deprecation warning on every
+# single conda invocation is not worth it.
+{% set conda_major = (conda_version | trim).split('.')[0] | int %}
+{% if conda_major > 0 and conda_major < 25 %}
+auto_activate_base: {{ conda_auto_activate | bool | lower }}
+{% else %}
+auto_activate: {{ conda_auto_activate | bool | lower }}
+{% endif %}
