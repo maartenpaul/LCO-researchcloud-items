@@ -1,49 +1,58 @@
 ---
 - name: Install system dependencies
-  when: ansible_pkg_mgr == 'apt'
   ansible.builtin.apt:
-    name:
-      - wget
-      - unzip
-      - libxcb-xinerama0
+    name: [unzip, xz-utils, libxcb-xinerama0]
     state: present
-    update_cache: yes
-  # Apt mirror hiccups on a fresh workspace should not fail the whole build.
-  failed_when: false
+    update_cache: true
 
-- name: Download and Extract QuPath
+- name: Download and unpack QuPath
   ansible.builtin.unarchive:
     src: "{{ qupath_url }}"
-    dest: "/opt"
-    remote_src: yes
-    creates: "/opt/QuPath/bin/QuPath"
+    dest: /opt
+    remote_src: true
+    creates: /opt/QuPath/bin/QuPath
 
-- name: Create Common Data directory
+# Writable by everyone, so an extension installed from QuPath's catalog lands
+# here for all users.
+- name: Create the common data directory
   ansible.builtin.file:
     path: "{{ qupath_common_data_dir }}"
     state: directory
-    mode: '0777'
+    mode: "0777"
 
-- name: Download Extensions from Zenodo
+- name: Download and unpack the common data
   ansible.builtin.unarchive:
     src: "{{ qupath_common_data_url }}"
     dest: "{{ qupath_common_data_dir }}"
-    remote_src: yes
+    remote_src: true
+    creates: "{{ qupath_common_data_dir }}/extensions/catalogs/registry.json"
 
-- name: Configure QuPath preferences
-  ansible.builtin.shell: |
-    export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"
-    /opt/QuPath/bin/QuPath script "{{ role_path }}/files/QuPath_setPaths.groovy"
-  # This targets the researcher user (e.g., ubuntu)
-  become: yes
-  become_user: "{{ ansible_user_id }}"
-  # Writes the preferences file every run; a headless QuPath that exits
-  # non-zero should not fail the workspace build.
-  changed_when: true
-  failed_when: false
-
-- name: Install Desktop Launcher
+- name: Add QuPath to the application menu
   ansible.builtin.template:
     src: qupath.desktop.j2
-    dest: "/usr/share/applications/qupath.desktop"
+    dest: /usr/share/applications/qupath.desktop
     mode: "0644"
+
+- name: Install the preferences script
+  ansible.builtin.template:
+    src: qupath-prefs.groovy.j2
+    dest: /opt/QuPath/qupath-prefs.groovy
+    mode: "0644"
+
+- name: Install uusrc.general Ansible collection
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | dirname }}/ansible-galaxy
+      collection install -r {{ playbook_dir }}/requirements.yml --force
+  register: qupath_galaxy
+  changed_when: "'Installing' in qupath_galaxy.stdout"
+
+- name: Include uusrc.general.runonce role
+  ansible.builtin.include_role:
+    name: uusrc.general.runonce
+
+- name: Install the per-user QuPath setup
+  ansible.builtin.copy:
+    src: setup-qupath.sh
+    dest: /etc/runonce.d/setup-qupath.sh
+    mode: "0755"

@@ -30,8 +30,10 @@ Your tools live in `~/AI_tools_pixi/<tool>`, and each one is yours to change:
 
 ```bash
 cd ~/AI_tools_pixi/cellpose
-pixi add scikit-image          # or: pixi add --pypi <package>
+pixi add --platform linux-64 scikit-image     # or: --pypi <package>
 ```
+
+`--platform linux-64` matters. The manifests also list Windows, and a plain `pixi add` re-solves for every platform. It then fails trying to build PyPI packages for Windows ("failed to solve the pypi requirements ... for platform 'win-64-cuda-12-8'").
 
 Running kernels keep the old environment until they are restarted.
 
@@ -58,7 +60,10 @@ SRC passes these as Ansible extra-vars. See `CLAUDE.md` for how to run the playb
 ## Notes
 
 - **Only tools that are built get a kernel, a menu entry and a user copy.** A redeploy that adds tools does not reach users who have already logged in. They can copy the manifests by hand as shown above.
-- **The shared cache has to be writable by every user**, because building a copy writes lock and repodata files into it. The role gives the workspace's `rsc_co_<id>` group a default ACL on it. A systemd timer (`pixi-cache-perms`) resets the ACL mask, because pixi writes repodata shards with mode 0600, which would otherwise block the next user's `pixi add`.
+- **The shared cache** is configured in `/etc/pixi/config.toml`. Packages and wheels come from `/opt/pixi-cache`, so users' copies hardlink to one set of files. Repodata and the conda↔PyPI mapping stay in each user's `~/.cache/pixi`, because pixi writes them mode 0600, and shared they lock other users out.
+  - The cache is group-writable for the workspace's `rsc_co_<id>` group, via a default ACL set before the build. pixi needs this for its lock files.
+  - The price: any CO member can modify files every environment hardlinks. That is no worse than it is on SRC workspaces where all CO members have sudo.
+  - Measured on an RTX2080 box: a user's first cellpose start takes ~6 s and ~120 MB of real disk.
 - **napari in a notebook:** kernels run under `ai-tools-kernel`. If you have a desktop session open, the viewer opens on it; otherwise it gets a private `xvfb-run` display, where `nbscreenshot` works. Qt's `offscreen` platform is not a substitute, because it creates no GL context.
 - **GPU rendering:** launchers are written with `vglrun -d egl` when `/dev/nvidiactl` existed at deploy time. For napari, `ssh -X` is ~450× slower than the desktop.
 

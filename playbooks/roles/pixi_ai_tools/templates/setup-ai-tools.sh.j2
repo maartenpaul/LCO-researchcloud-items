@@ -61,8 +61,7 @@ for tool in "${TOOLS[@]}"; do
            "${MY_DIR}/${tool}/pixi.toml",
            "python", "-m", "ipykernel_launcher", "-f", "{connection_file}"],
   "display_name": "${tool} (Pixi)",
-  "language": "python",
-  "env": {"PIXI_CACHE_DIR": "{{ pixi_ai_tools_cache_dir }}"}
+  "language": "python"
 }
 EOF
 
@@ -82,7 +81,6 @@ launcher "${APPS}/pixi-jupyterlab.desktop" JupyterLab \
 
 if ! grep -q 'pixi completion' "${HOME}/.bashrc" 2>/dev/null; then
     cat >>"${HOME}/.bashrc" <<'EOF'
-export PIXI_CACHE_DIR={{ pixi_ai_tools_cache_dir }}
 eval "$(pixi completion --shell bash)"
 EOF
 fi

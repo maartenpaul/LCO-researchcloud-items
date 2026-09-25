@@ -60,10 +60,16 @@ sudo env VIRTUAL_ENV=/etc/src/venv/src-venv \
   `pixi run` from there; pixi builds the copy by hardlinking out of the cache.
   There is deliberately **no wrapper CLI** — plain pixi on plain folders. Don't
   grow one back. Hand-editing `/opt` will stop the next deploy at the clone step.
-- The shared cache must stay writable by the CO group (`rsc_co_<id>`), and pixi
-  writes repodata shards 0600, which voids the ACL — hence the
-  `pixi-cache-perms` timer. Remove it only after checking `pixi add` as a second
-  user.
+- **Shared cache, per-user repodata** (`/etc/pixi/config.toml`). Packages and
+  wheels must be shared or every copy costs gigabytes, and pixi needs the cache
+  group-writable for its lock files — so a default ACL for `rsc_co_<id>` goes on
+  *before* the build. Repodata and pypi-mapping are written 0600, so they must
+  stay per user: shared, they locked everyone else out of `pixi add`, which the
+  course patched with a mask-reset timer that also made every package file
+  group-writable. Don't bring the timer back. A read-only shared cache does not
+  work: pixi falls back to copying into the user's own cache.
+- AI_tools_pixi manifests list win-64 too; users need `pixi add --platform
+  linux-64`, or pixi tries to build Windows PyPI packages and fails.
 - **`pixi install` must be `--locked`.** A plain install rewrites `pixi.lock`
   when it migrates an older lock format, which dirties the tracked checkout and
   makes every later deploy fail. `--locked` is preferred over `--frozen` because

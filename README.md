@@ -12,7 +12,7 @@ Each component has one **entry-point playbook** in `playbooks/`. That path is wh
 | **Fiji** | [`fiji.yml`](playbooks/fiji.yml) | Shared Fiji with the BIOP update sites. [README](playbooks/roles/fiji/README.md) |
 | **QuPath** | [`qupath.yml`](playbooks/qupath.yml) | QuPath with the BIOP common data and extensions. [README](playbooks/roles/qupath/README.md) |
 | **ilastik** | [`ilastik.yml`](playbooks/ilastik.yml) | ilastik (GPU build on GPU workspaces). [README](playbooks/roles/ilastik/README.md) |
-| **Desktop extras** | [`desktop-extras.yml`](playbooks/desktop-extras.yml) | Guacamole file transfer and archive tools for the SRC desktop flavour. [README](playbooks/roles/desktop_extras/README.md) |
+| **Desktop extras** | [`desktop-extras.yml`](playbooks/desktop-extras.yml) | Small additions to the SRC desktop flavour (archive tools, Guacamole settings). [README](playbooks/roles/desktop_extras/README.md) |
 | **OMERO** | [`omero.yml`](playbooks/omero.yml) | [OMERO.server + OMERO.web](https://github.com/ome/docker-example-omero) in Docker behind the SRC nginx proxy. [README](playbooks/roles/omero/README.md) |
 | **conda** | [`conda.yml`](playbooks/conda.yml) | System-wide [Miniforge](https://github.com/conda-forge/miniforge). [README](playbooks/roles/conda/README.md) |
 

@@ -2,10 +2,12 @@
 
 SRC component: `playbooks/desktop-extras.yml` → role `desktop_extras`.
 
-Fixes for the SRC Ubuntu desktop (Guacamole) flavour. On other flavours the Guacamole part does nothing.
+Small additions to the SRC Ubuntu desktop (Guacamole) flavour:
 
-- **File transfer through the browser.** SRC's Guacamole connection has no drive. This role adds one (`enable-drive`, one folder per user under `/var/lib/guacamole/drive`) and restarts tomcat10.
-  - Uploads from the Guacamole menu (Ctrl+Alt+Shift) appear in `~/Transfer` inside the session.
-  - The drive is not `$HOME` itself: guacd runs as `daemon`, so files would be owned by it.
-  - The edit is anchored on SRC's `security=rdp` param. The deploy fails if that param is missing, and the XML is validated before it is written.
-- **Archive tools:** zip, 7zip, Xarchiver and Thunar's "Create/Extract archive".
+- archive tools: zip, 7zip, Xarchiver and Thunar's "Create/Extract archive";
+- a drive on the Guacamole connection, linked as `~/Transfer`.
+
+Implementation notes for the Guacamole edit:
+- The edit is anchored on SRC's `security=rdp` param, and the XML is validated before it is written.
+- The drive lives in `/var/lib/guacamole/drive/<user>` rather than `$HOME`, because guacd runs as `daemon`.
+- On workspaces without Guacamole the edit does nothing.

@@ -1,0 +1,20 @@
+#!/bin/bash
+# setup-qupath.sh — per-user part of the qupath role, run once at first login.
+# Written by Ansible; safe to re-run by hand.
+
+# QuPath keeps its preferences in the user's Java prefs; setting them through
+# QuPath itself is simpler than writing its encoded node directories by hand.
+JAVA_TOOL_OPTIONS=-Djava.awt.headless=true /opt/QuPath/bin/QuPath \
+    script /opt/QuPath/qupath-prefs.groovy >/dev/null 2>&1 || true
+
+# XFCE asks "untrusted launcher?" unless the checksum is stored as GIO metadata.
+if [ -d /etc/xdg/xfce4 ]; then
+    mkdir -p "${HOME}/Desktop"
+    cp /usr/share/applications/qupath.desktop "${HOME}/Desktop/"
+    chmod +x "${HOME}/Desktop/qupath.desktop"
+    if command -v gio >/dev/null 2>&1; then
+        gio set -t string "${HOME}/Desktop/qupath.desktop" metadata::xfce-exe-checksum \
+            "$(sha256sum "${HOME}/Desktop/qupath.desktop" | cut -d' ' -f1)" 2>/dev/null || true
+        gio set -t string "${HOME}/Desktop/qupath.desktop" metadata::trusted true 2>/dev/null || true
+    fi
+fi

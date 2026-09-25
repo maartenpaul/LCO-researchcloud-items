@@ -1,6 +1,13 @@
 ---
-- name: Install and Configure QuPath
+# qupath.yml — SURF Research Cloud component entry point.
+#
+# QuPath with the BIOP common data (extensions, models) in /opt. See
+# roles/qupath/README.md. No parameters.
+
+- name: Install QuPath
   hosts: localhost
-  become: yes
+  connection: local
+  gather_facts: false
+  become: true
   roles:
     - qupath

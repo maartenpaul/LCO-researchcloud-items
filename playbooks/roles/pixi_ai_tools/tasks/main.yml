@@ -127,11 +127,62 @@
   ansible.builtin.debug:
     msg: "Building: {{ pixi_ai_tools_install_envs | join(', ') }}"
 
+# Users' copies hardlink out of the shared cache and take lock files in it, so
+# it must be group-writable for every workspace user. SRC puts all members in
+# the CO's rsc_co_<id> group; the most common one among /home users is it. The
+# default ACL is set before the build so root's files get it too; with it, a
+# file's group bits follow its create mode, which makes lock files writable.
+- name: Find the workspace's CO group
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\// { print $1 }' |
+        xargs -r -n1 id -nG | tr ' ' '\n' | grep -E '^rsc_co_[0-9]+$' |
+        sort | uniq -c | sort -rn | awk 'NR == 1 { print $2 }'
+    executable: /bin/bash
+  register: pixi_ai_tools_co_group
+  changed_when: false
+
 - name: Create the shared pixi cache
   ansible.builtin.file:
     path: "{{ pixi_ai_tools_cache_dir }}"
     state: directory
+    group: "{{ pixi_ai_tools_co_group.stdout | default(omit, true) }}"
+    mode: "2775"
+
+- name: Give the CO group write access to the shared cache
+  ansible.builtin.command:
+    cmd: >-
+      setfacl -R -m g:{{ pixi_ai_tools_co_group.stdout }}:rwX
+      -m d:g:{{ pixi_ai_tools_co_group.stdout }}:rwX {{ pixi_ai_tools_cache_dir }}
+  when: pixi_ai_tools_co_group.stdout | length > 0
+  changed_when: false
+
+- name: Report the cache group
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Shared cache group: ' ~ pixi_ai_tools_co_group.stdout
+         if pixi_ai_tools_co_group.stdout | length > 0 else
+         'No rsc_co_ group found: the cache is root-only and users cannot build their copies.' }}
+
+# Packages and wheels come from the shared cache; repodata and the conda/PyPI
+# mapping stay per user. Those are written 0600, and shared they locked every
+# other user out of `pixi add` ("Permission denied" on a repodata shard).
+- name: Create the system pixi config directory
+  ansible.builtin.file:
+    path: /etc/pixi
+    state: directory
     mode: "0755"
+
+- name: Point every user's pixi at the shared cache
+  ansible.builtin.copy:
+    dest: /etc/pixi/config.toml
+    mode: "0644"
+    content: |
+      [cache]
+      root = "{{ pixi_ai_tools_cache_dir }}"
+      repodata = "~/.cache/pixi/repodata"
+      pypi-mapping = "~/.cache/pixi/pypi-mapping"
 
 # The long pole of the deploy. --locked installs exactly the lock and never
 # rewrites it, which keeps the checkout clean for the next deploy, and fails if
@@ -149,85 +200,9 @@
       after=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
       [ "$before" = "$after" ] && echo pixi-unchanged || echo pixi-changed
     executable: /bin/bash
-  environment:
-    PIXI_CACHE_DIR: "{{ pixi_ai_tools_cache_dir }}"
   loop: "{{ pixi_ai_tools_install_envs }}"
   register: pixi_ai_tools_build
   changed_when: "'pixi-changed' in pixi_ai_tools_build.stdout"
-
-# Users' copies hardlink out of the cache and write lock and repodata files
-# into it, so it must be writable by every workspace user. SRC puts all members
-# in the CO's rsc_co_<id> group; the most common one among /home users is it.
-- name: Find the workspace's CO group
-  ansible.builtin.shell:
-    cmd: |
-      set -o pipefail
-      getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\// { print $1 }' |
-        xargs -r -n1 id -nG | tr ' ' '\n' | grep -E '^rsc_co_[0-9]+$' |
-        sort | uniq -c | sort -rn | awk 'NR == 1 { print $2 }'
-    executable: /bin/bash
-  register: pixi_ai_tools_co_group
-  changed_when: false
-
-- name: Give the CO group write access to the shared cache
-  ansible.builtin.command:
-    cmd: >-
-      setfacl -R -m g:{{ pixi_ai_tools_co_group.stdout }}:rwX
-      -m d:g:{{ pixi_ai_tools_co_group.stdout }}:rwX {{ pixi_ai_tools_cache_dir }}
-  when: pixi_ai_tools_co_group.stdout | length > 0
-  changed_when: true
-
-# pixi writes repodata shards 0600, which empties the ACL mask and so voids the
-# group entry above: the next user's `pixi add` fails with "Permission denied".
-# Resetting the mask restores it; the timer repeats that for new shards.
-- name: Install the cache permission fix
-  ansible.builtin.copy:
-    dest: "/etc/systemd/system/pixi-cache-perms.{{ item.ext }}"
-    mode: "0644"
-    content: "{{ item.content }}"
-  loop:
-    - ext: service
-      content: |
-        [Unit]
-        Description=Keep the shared pixi cache group-writable
-        [Service]
-        Type=oneshot
-        ExecStart=/usr/bin/setfacl -R -m m::rwX {{ pixi_ai_tools_cache_dir }}
-    - ext: timer
-      content: |
-        [Unit]
-        Description=Keep the shared pixi cache group-writable
-        [Timer]
-        OnBootSec=5min
-        OnUnitActiveSec=10min
-        [Install]
-        WantedBy=timers.target
-  loop_control:
-    label: "{{ item.ext }}"
-  when: pixi_ai_tools_co_group.stdout | length > 0
-
-- name: Enable the cache permission fix
-  ansible.builtin.systemd:
-    name: pixi-cache-perms.timer
-    enabled: true
-    state: started
-    daemon_reload: true
-  when: pixi_ai_tools_co_group.stdout | length > 0
-
-- name: Report the cache group
-  ansible.builtin.debug:
-    msg: >-
-      {{ 'Shared cache group: ' ~ pixi_ai_tools_co_group.stdout
-         if pixi_ai_tools_co_group.stdout | length > 0 else
-         'No rsc_co_ group found: the cache is root-only and users cannot build their copies.' }}
-
-- name: Export the shared cache to login shells
-  ansible.builtin.lineinfile:
-    path: /etc/environment
-    regexp: '^PIXI_CACHE_DIR='
-    line: "PIXI_CACHE_DIR={{ pixi_ai_tools_cache_dir }}"
-    create: true
-    mode: "0644"
 
 # --- GUI, per-user setup, JupyterHub ----------------------------------------
 
