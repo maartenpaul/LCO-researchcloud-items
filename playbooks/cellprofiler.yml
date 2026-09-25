@@ -1,0 +1,14 @@
+---
+# cellprofiler.yml — SURF Research Cloud component entry point.
+#
+# CellProfiler with cellpose and the RunCellpose plugin, as a pixi environment
+# in /opt/CellProfiler. Needs the Pixi AI Tools component for pixi and its
+# shared package cache. See roles/cellprofiler/README.md. No parameters.
+
+- name: Install CellProfiler
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  roles:
+    - cellprofiler

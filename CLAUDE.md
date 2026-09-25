@@ -77,12 +77,14 @@ sudo env VIRTUAL_ENV=/etc/src/venv/src-venv \
 - pixi itself is pinned (`PIXI_AI_TOOLS_PIXI_VERSION`). Unpinned, two workspaces
   built from the same component version can get different pixi releases.
 
-## Fiji / QuPath / ilastik
+## Fiji / QuPath / ilastik / CellProfiler
 
-Standalone roles that must also run without pixi_ai_tools. Where they point at a
+Standalone roles; all but CellProfiler must also run without pixi_ai_tools. Where they point at a
 pixi environment (the cellpose python) they check it exists and skip the pref
 otherwise. Per-user state (Desktop icon, Java/IJ prefs) is written by a runonce
 script, never as root at deploy time — a pref written as root reaches nobody.
+QuPath extensions are version-specific (0.6 jars do not load in 0.7): pin
+them from the catalogs' `version_range`, not from a bundle.
 
 ## Conventions
 

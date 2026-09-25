@@ -1,11 +1,32 @@
 ---
-qupath_version: "0.6.0"
+qupath_version: "0.7.0"
 qupath_url: >-
   https://github.com/qupath/qupath/releases/download/v{{ qupath_version }}/QuPath-v{{ qupath_version }}-Linux.tar.xz
-# Extensions (cellpose, StarDist, InstanSeg, OMERO, ...) and models, as used by
-# BIOP-desktop's Dockerfile-qupath.
-qupath_common_data_url: "https://zenodo.org/records/17121500/files/QuPath_Common_Data_0.6.zip?download=1"
-qupath_common_data_dir: /opt/QuPath_Common_Data
-# Where the pixi_ai_tools role builds its environments; the cellpose extension
-# is pointed at the cellpose one when it exists.
+qupath_link: /opt/QuPath
+
+# QuPath's "user directory": every user's prefs point here, so the extensions
+# below are there for everyone. Writable by all, so an extension added from
+# QuPath's own catalogs is shared too.
+qupath_user_dir: /opt/QuPath_shared
+
+# Versions compatible with QuPath 0.7, from the qupath and BIOP extension
+# catalogs; none has required dependencies. Jars go straight into
+# <user dir>/extensions, which QuPath loads as manually installed extensions.
+# The BIOP releases are zips holding the jar and a QC script.
+qupath_extensions:
+  - https://github.com/BIOP/qupath-extension-cellpose/releases/download/v0.12.1/qupath-extension-cellpose-0.12.1.zip
+  - https://github.com/BIOP/qupath-extension-spotiflow/releases/download/v0.4.1/qupath-extension-spotiflow-0.4.1.zip
+  - https://github.com/BIOP/qupath-extension-biop/releases/download/v3.7.0/qupath-extension-biop-3.7.0.jar
+  - https://github.com/qupath/qupath-extension-stardist/releases/download/v0.6.0/qupath-extension-stardist-0.6.0.jar
+  - https://github.com/qupath/qupath-extension-instanseg/releases/download/v0.1.7/qupath-extension-instanseg-0.1.7.jar
+  - https://github.com/qupath/qupath-extension-omero/releases/download/v0.2.5/qupath-extension-omero-0.2.5.jar
+
+# Pre-trained StarDist models for the StarDist extension (OpenCV DNN, no
+# TensorFlow needed).
+qupath_stardist_models:
+  - https://github.com/qupath/models/raw/main/stardist/dsb2018_heavy_augment.pb
+  - https://github.com/qupath/models/raw/main/stardist/he_heavy_augment.pb
+
+# Where the pixi_ai_tools role builds its environments; the cellpose and
+# spotiflow extensions are pointed at those when they exist.
 qupath_pixi_envs_dir: /opt/AI_tools_pixi

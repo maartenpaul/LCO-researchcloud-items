@@ -10,13 +10,14 @@ Each component has one **entry-point playbook** in `playbooks/`. That path is wh
 |-----------|----------|------------------|
 | **Pixi AI Tools** | [`pixi-ai-tools.yml`](playbooks/pixi-ai-tools.yml) | [AI_tools_pixi](https://github.com/Leiden-Cell-Observatory/AI_tools_pixi) environments (cellpose, stardist, micro_sam, …), built once in `/opt` with a shared cache. Each user gets a copy with kernels and launchers. [README](playbooks/roles/pixi_ai_tools/README.md) |
 | **Fiji** | [`fiji.yml`](playbooks/fiji.yml) | Shared Fiji with the BIOP update sites. [README](playbooks/roles/fiji/README.md) |
-| **QuPath** | [`qupath.yml`](playbooks/qupath.yml) | QuPath with the BIOP common data and extensions. [README](playbooks/roles/qupath/README.md) |
+| **QuPath** | [`qupath.yml`](playbooks/qupath.yml) | QuPath 0.7 with the cellpose, spotiflow, StarDist, InstanSeg, OMERO and BIOP extensions. [README](playbooks/roles/qupath/README.md) |
+| **CellProfiler** | [`cellprofiler.yml`](playbooks/cellprofiler.yml) | CellProfiler with cellpose and RunCellpose, as a pixi env; needs Pixi AI Tools. [README](playbooks/roles/cellprofiler/README.md) |
 | **ilastik** | [`ilastik.yml`](playbooks/ilastik.yml) | ilastik (GPU build on GPU workspaces). [README](playbooks/roles/ilastik/README.md) |
 | **Desktop extras** | [`desktop-extras.yml`](playbooks/desktop-extras.yml) | Small additions to the SRC desktop flavour (archive tools, Guacamole settings). [README](playbooks/roles/desktop_extras/README.md) |
 | **OMERO** | [`omero.yml`](playbooks/omero.yml) | [OMERO.server + OMERO.web](https://github.com/ome/docker-example-omero) in Docker behind the SRC nginx proxy. [README](playbooks/roles/omero/README.md) |
 | **conda** | [`conda.yml`](playbooks/conda.yml) | System-wide [Miniforge](https://github.com/conda-forge/miniforge). [README](playbooks/roles/conda/README.md) |
 
-Pixi AI Tools is the base for image analysis. Fiji and QuPath point their cellpose integration at its environments when they exist, and still install without them. CellProfiler is planned as an environment in AI_tools_pixi.
+Pixi AI Tools is the base for image analysis; Fiji, QuPath, ilastik and CellProfiler are optional components on top. Fiji and QuPath point their cellpose integration at its environments when they exist, and still install without them. CellProfiler needs it, for pixi and the shared package cache.
 
 ## Adding a component
 

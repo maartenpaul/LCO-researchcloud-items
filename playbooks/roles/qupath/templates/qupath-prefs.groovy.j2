@@ -3,15 +3,18 @@
 import qupath.lib.gui.prefs.PathPrefs
 
 if (PathPrefs.userPathProperty().get() == null)
-    PathPrefs.userPathProperty().set("{{ qupath_common_data_dir }}")
+    PathPrefs.userPathProperty().set("{{ qupath_user_dir }}")
 
-// The cellpose extension (0.11) reads these; cellposeSAMPythonPath is for cpsam.
-def python = new File("{{ qupath_pixi_envs_dir }}/cellpose/.pixi/envs/default/bin/python")
+// Python for the cellpose (cellpose and cpsam models) and spotiflow extensions.
+def envs = "{{ qupath_pixi_envs_dir }}"
+def pythons = [
+    cellposePythonPath   : "${envs}/cellpose/.pixi/envs/default/bin/python",
+    cellposeSAMPythonPath: "${envs}/cellpose/.pixi/envs/default/bin/python",
+    spotiflowPythonPath  : "${envs}/spotiflow/.pixi/envs/default/bin/python",
+]
 def prefs = PathPrefs.getUserPreferences()
-if (python.canExecute()) {
-    for (key in ["cellposePythonPath", "cellposeSAMPythonPath"]) {
-        if (prefs.get(key, "").isEmpty())
-            prefs.put(key, python.getPath())
-    }
+pythons.each { key, path ->
+    if (new File(path).canExecute() && prefs.get(key, "").isEmpty())
+        prefs.put(key, path)
 }
 prefs.flush()

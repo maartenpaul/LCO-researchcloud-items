@@ -5,27 +5,54 @@
     state: present
     update_cache: true
 
+# One directory per version, so an upgrade is a new directory and a new link.
+- name: Create the QuPath version directory
+  ansible.builtin.file:
+    path: "/opt/QuPath-{{ qupath_version }}"
+    state: directory
+    mode: "0755"
+
 - name: Download and unpack QuPath
   ansible.builtin.unarchive:
     src: "{{ qupath_url }}"
-    dest: /opt
+    dest: "/opt/QuPath-{{ qupath_version }}"
     remote_src: true
-    creates: /opt/QuPath/bin/QuPath
+    creates: "/opt/QuPath-{{ qupath_version }}/QuPath/bin/QuPath"
 
-# Writable by everyone, so an extension installed from QuPath's catalog lands
-# here for all users.
-- name: Create the common data directory
+- name: Point the stable path at this version
   ansible.builtin.file:
-    path: "{{ qupath_common_data_dir }}"
+    src: "/opt/QuPath-{{ qupath_version }}/QuPath"
+    dest: "{{ qupath_link }}"
+    state: link
+
+- name: Create the shared user directory
+  ansible.builtin.file:
+    path: "{{ qupath_user_dir }}/{{ item }}"
     state: directory
     mode: "0777"
+  loop: [extensions, stardist]
 
-- name: Download and unpack the common data
+- name: Download the extension jars
+  ansible.builtin.get_url:
+    url: "{{ item }}"
+    dest: "{{ qupath_user_dir }}/extensions/"
+    mode: "0644"
+  loop: "{{ qupath_extensions | reject('search', '\\.zip$') | list }}"
+
+- name: Download and unpack the extension zips
   ansible.builtin.unarchive:
-    src: "{{ qupath_common_data_url }}"
-    dest: "{{ qupath_common_data_dir }}"
+    src: "{{ item }}"
+    dest: "{{ qupath_user_dir }}/extensions"
     remote_src: true
-    creates: "{{ qupath_common_data_dir }}/extensions/catalogs/registry.json"
+    creates: "{{ qupath_user_dir }}/extensions/{{ item | basename | regex_replace('\\.zip$', '.jar') }}"
+  loop: "{{ qupath_extensions | select('search', '\\.zip$') | list }}"
+
+- name: Download the StarDist models
+  ansible.builtin.get_url:
+    url: "{{ item }}"
+    dest: "{{ qupath_user_dir }}/stardist/"
+    mode: "0644"
+  loop: "{{ qupath_stardist_models }}"
 
 - name: Add QuPath to the application menu
   ansible.builtin.template:
@@ -36,23 +63,22 @@
 - name: Install the preferences script
   ansible.builtin.template:
     src: qupath-prefs.groovy.j2
-    dest: /opt/QuPath/qupath-prefs.groovy
+    dest: "/opt/QuPath-{{ qupath_version }}/qupath-prefs.groovy"
     mode: "0644"
 
 - name: Install uusrc.general Ansible collection
   ansible.builtin.command:
     cmd: >-
       {{ ansible_playbook_python | dirname }}/ansible-galaxy
-      collection install -r {{ playbook_dir }}/requirements.yml --force
-  register: qupath_galaxy
-  changed_when: "'Installing' in qupath_galaxy.stdout"
+      collection install -r {{ playbook_dir }}/requirements.yml
+    creates: /root/.ansible/collections/ansible_collections/uusrc/general
 
 - name: Include uusrc.general.runonce role
   ansible.builtin.include_role:
     name: uusrc.general.runonce
 
 - name: Install the per-user QuPath setup
-  ansible.builtin.copy:
-    src: setup-qupath.sh
+  ansible.builtin.template:
+    src: setup-qupath.sh.j2
     dest: /etc/runonce.d/setup-qupath.sh
     mode: "0755"

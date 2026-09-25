@@ -1,0 +1,14 @@
+# CellProfiler with cellpose for the RunCellpose plugin, in one environment:
+# RunCellpose's "Python" mode imports cellpose from the environment it runs in.
+# CellProfiler 4.2 is Python 3.9 only, which cellpose 4 no longer supports, so
+# this is cellpose 3 (cyto3, nuclei, ...), not cellpose-SAM.
+[workspace]
+name = "cellprofiler"
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64"]
+
+[dependencies]
+cellprofiler = "4.2.8.*"
+
+[pypi-dependencies]
+cellpose = ">=3.1,<4"

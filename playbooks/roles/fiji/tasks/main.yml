@@ -87,9 +87,8 @@
   ansible.builtin.command:
     cmd: >-
       {{ ansible_playbook_python | dirname }}/ansible-galaxy
-      collection install -r {{ playbook_dir }}/requirements.yml --force
-  register: fiji_galaxy
-  changed_when: "'Installing' in fiji_galaxy.stdout"
+      collection install -r {{ playbook_dir }}/requirements.yml
+    creates: /root/.ansible/collections/ansible_collections/uusrc/general
 
 - name: Include uusrc.general.runonce role
   ansible.builtin.include_role:
