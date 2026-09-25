@@ -30,10 +30,10 @@ Your tools live in `~/AI_tools_pixi/<tool>`, and each one is yours to change:
 
 ```bash
 cd ~/AI_tools_pixi/cellpose
-pixi add --platform linux-64 scikit-image     # or: --pypi <package>
+pixi add scikit-image          # or: pixi add --pypi <package>
 ```
 
-`--platform linux-64` matters. The manifests also list Windows, and a plain `pixi add` re-solves for every platform. It then fails trying to build PyPI packages for Windows ("failed to solve the pypi requirements ... for platform 'win-64-cuda-12-8'").
+The manifests also list Windows, so pixi resolves an added package for both platforms. If a package does not exist for Windows, add it for Linux only with `pixi add --platform linux-64 <package>`.
 
 Running kernels keep the old environment until they are restarted.
 

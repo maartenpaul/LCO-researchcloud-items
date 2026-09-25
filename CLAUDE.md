@@ -68,8 +68,6 @@ sudo env VIRTUAL_ENV=/etc/src/venv/src-venv \
   course patched with a mask-reset timer that also made every package file
   group-writable. Don't bring the timer back. A read-only shared cache does not
   work: pixi falls back to copying into the user's own cache.
-- AI_tools_pixi manifests list win-64 too; users need `pixi add --platform
-  linux-64`, or pixi tries to build Windows PyPI packages and fails.
 - **`pixi install` must be `--locked`.** A plain install rewrites `pixi.lock`
   when it migrates an older lock format, which dirties the tracked checkout and
   makes every later deploy fail. `--locked` is preferred over `--frozen` because
