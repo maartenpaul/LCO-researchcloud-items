@@ -1,0 +1,69 @@
+---
+- name: Check for an NVIDIA GPU
+  ansible.builtin.stat:
+    path: /dev/nvidiactl
+  register: ilastik_nvidiactl
+
+- name: Pick the ilastik build
+  ansible.builtin.set_fact:
+    ilastik_name: >-
+      ilastik-{{ ilastik_version }}{{ '-gpu'
+      if (ilastik_nvidiactl.stat.exists if ilastik_gpu == 'auto' else ilastik_gpu | bool)
+      else '' }}-Linux
+
+- name: Download and unpack ilastik
+  ansible.builtin.unarchive:
+    src: "https://files.ilastik.org/{{ ilastik_name }}.tar.bz2"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/{{ ilastik_name }}/run_ilastik.sh"
+
+# A stable path for the menu entry; a new version is a new directory.
+- name: Point the stable path at this version
+  ansible.builtin.file:
+    src: "/opt/{{ ilastik_name }}"
+    dest: "{{ ilastik_link }}"
+    state: link
+
+- name: Find the ilastik icon
+  ansible.builtin.find:
+    paths: "/opt/{{ ilastik_name }}/lib"
+    patterns: ilastik-icon.png
+    recurse: true
+  register: ilastik_icons
+
+- name: Add ilastik to the application menu
+  ansible.builtin.copy:
+    dest: /usr/share/applications/ilastik.desktop
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Version=1.0
+      Type=Application
+      Name=ilastik
+      Comment=Interactive machine learning for image analysis
+      Exec={{ ilastik_link }}/run_ilastik.sh %F
+      TryExec={{ ilastik_link }}/run_ilastik.sh
+      Icon={{ (ilastik_icons.files | map(attribute='path') | select('search', '96x96') | first)
+              | default('applications-science') }}
+      Terminal=false
+      StartupNotify=true
+      Categories=Science;ImageProcessing;
+      StartupWMClass=ilastik
+
+- name: Install uusrc.general Ansible collection
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | dirname }}/ansible-galaxy
+      collection install -r {{ playbook_dir }}/requirements.yml
+    creates: /root/.ansible/collections/ansible_collections/uusrc/general
+
+- name: Include uusrc.general.runonce role
+  ansible.builtin.include_role:
+    name: uusrc.general.runonce
+
+- name: Install the per-user desktop icon
+  ansible.builtin.template:
+    src: setup-ilastik.sh.j2
+    dest: /etc/runonce.d/setup-ilastik.sh
+    mode: "0755"

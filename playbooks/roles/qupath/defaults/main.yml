@@ -1,8 +1,58 @@
 ---
-qupath_version: "0.6.0"
+qupath_version: "0.7.0"
 qupath_url: >-
   https://github.com/qupath/qupath/releases/download/v{{ qupath_version }}/QuPath-v{{ qupath_version }}-Linux.tar.xz
-qupath_common_data_url: "https://zenodo.org/records/17121500/files/QuPath_Common_Data_0.6.zip?download=1"
-# making use of common data file from BIOP-desktop
-# https://github.com/BIOP/BIOP-desktop/blob/main/docker/QuPath/Dockerfile-qupath
-qupath_common_data_dir: "/opt/QuPath_Common_Data"
+qupath_link: /opt/QuPath
+
+# QuPath's "user directory": every user's prefs point here, so the extensions
+# below are there for everyone. Writable by all, so an extension added from
+# QuPath's own catalogs is shared too.
+qupath_user_dir: /opt/QuPath_shared
+
+# Extensions, installed the way QuPath's extension manager installs them, so it
+# lists them as catalog extensions it can update: each jar under
+# extensions/catalogs/<catalog>/<extension>/<version>/main-jar, recorded in
+# extensions/catalogs/registry.json. Versions are the QuPath 0.7-compatible
+# releases in each catalog.json; none has required dependencies. The BIOP
+# cellpose and spotiflow releases are zips holding the jar and a QC script.
+qupath_catalogs:
+  - name: QuPath catalog
+    description: Extensions maintained by the QuPath team
+    uri: https://github.com/qupath/qupath-catalog
+    raw_uri: https://raw.githubusercontent.com/qupath/qupath-catalog/refs/heads/main/catalog.json
+    deletable: false
+    extensions:
+      - name: QuPath StarDist extension
+        version: v0.6.0
+        url: https://github.com/qupath/qupath-extension-stardist/releases/download/v0.6.0/qupath-extension-stardist-0.6.0.jar
+      - name: QuPath InstanSeg extension
+        version: v0.1.7
+        url: https://github.com/qupath/qupath-extension-instanseg/releases/download/v0.1.7/qupath-extension-instanseg-0.1.7.jar
+      - name: QuPath OMERO extension
+        version: v0.2.5
+        url: https://github.com/qupath/qupath-extension-omero/releases/download/v0.2.5/qupath-extension-omero-0.2.5.jar
+  - name: QuPath-BIOP catalog
+    description: Extensions maintained by the BIOP team
+    uri: https://github.com/BIOP/qupath-biop-catalog
+    raw_uri: https://raw.githubusercontent.com/BIOP/qupath-biop-catalog/refs/heads/main/catalog.json
+    deletable: true
+    extensions:
+      - name: QuPath Cellpose extension
+        version: v0.12.1
+        url: https://github.com/BIOP/qupath-extension-cellpose/releases/download/v0.12.1/qupath-extension-cellpose-0.12.1.zip
+      - name: QuPath Spotiflow extension
+        version: v0.4.1
+        url: https://github.com/BIOP/qupath-extension-spotiflow/releases/download/v0.4.1/qupath-extension-spotiflow-0.4.1.zip
+      - name: QuPath BIOP extension
+        version: v3.7.0
+        url: https://github.com/BIOP/qupath-extension-biop/releases/download/v3.7.0/qupath-extension-biop-3.7.0.jar
+
+# Pre-trained StarDist models for the StarDist extension (OpenCV DNN, no
+# TensorFlow needed).
+qupath_stardist_models:
+  - https://github.com/qupath/models/raw/main/stardist/dsb2018_heavy_augment.pb
+  - https://github.com/qupath/models/raw/main/stardist/he_heavy_augment.pb
+
+# Where the pixi_ai_tools role builds its environments; the cellpose and
+# spotiflow extensions are pointed at those when they exist.
+qupath_pixi_envs_dir: /opt/AI_tools_pixi

@@ -1,0 +1,15 @@
+#!/bin/bash
+# setup-cellprofiler.sh — per-user part of the cellprofiler role (Desktop icon), run once at first login.
+# Written by Ansible; safe to re-run by hand.
+
+# XFCE asks "untrusted launcher?" unless the checksum is stored as GIO metadata.
+if [ -d /etc/xdg/xfce4 ]; then
+    mkdir -p "${HOME}/Desktop"
+    cp /usr/share/applications/cellprofiler.desktop "${HOME}/Desktop/"
+    chmod +x "${HOME}/Desktop/cellprofiler.desktop"
+    if command -v gio >/dev/null 2>&1; then
+        gio set -t string "${HOME}/Desktop/cellprofiler.desktop" metadata::xfce-exe-checksum \
+            "$(sha256sum "${HOME}/Desktop/cellprofiler.desktop" | cut -d' ' -f1)" 2>/dev/null || true
+        gio set -t string "${HOME}/Desktop/cellprofiler.desktop" metadata::trusted true 2>/dev/null || true
+    fi
+fi

@@ -54,19 +54,35 @@ sudo env VIRTUAL_ENV=/etc/src/venv/src-venv \
 
 ## pixi_ai_tools specifics
 
-- The tool environments are **one root-owned copy** in `/opt/AI_tools_pixi` with
-  a shared package cache, and system-wide kernels. Per-user copies would
-  multiply 5–10 GB per environment by the size of a class.
-- **Users add packages with `ai-tools fork <tool>`**, which copies the manifest
-  into `$HOME` and rebuilds by hardlinking out of the shared cache — seconds, and
-  a fraction of the apparent size. Hand-editing `/opt` is outside the model and
-  will stop the next deploy at the clone step.
+- The tool environments are built **once, root-owned**, in `/opt/AI_tools_pixi`,
+  filling a shared package cache. Each user's runonce copies only `pixi.toml` +
+  `pixi.lock` into `~/AI_tools_pixi/<tool>`, and their kernels and launchers
+  `pixi run` from there; pixi builds the copy by hardlinking out of the cache.
+  There is deliberately **no wrapper CLI** — plain pixi on plain folders. Don't
+  grow one back. Hand-editing `/opt` will stop the next deploy at the clone step.
+- **Shared cache, per-user repodata** (`/etc/pixi/config.toml`). Packages and
+  wheels must be shared or every copy costs gigabytes, and pixi needs the cache
+  group-writable for its lock files — so a default ACL for `rsc_co_<id>` goes on
+  *before* the build. Repodata and pypi-mapping are written 0600, so they must
+  stay per user: shared, they locked everyone else out of `pixi add`, which the
+  course patched with a mask-reset timer that also made every package file
+  group-writable. Don't bring the timer back. A read-only shared cache does not
+  work: pixi falls back to copying into the user's own cache.
 - **`pixi install` must be `--locked`.** A plain install rewrites `pixi.lock`
   when it migrates an older lock format, which dirties the tracked checkout and
   makes every later deploy fail. `--locked` is preferred over `--frozen` because
   it also fails loudly when a lock has drifted from its manifest.
 - pixi itself is pinned (`PIXI_AI_TOOLS_PIXI_VERSION`). Unpinned, two workspaces
   built from the same component version can get different pixi releases.
+
+## Fiji / QuPath / ilastik / CellProfiler
+
+Standalone roles; all but CellProfiler must also run without pixi_ai_tools. Where they point at a
+pixi environment (the cellpose python) they check it exists and skip the pref
+otherwise. Per-user state (Desktop icon, Java/IJ prefs) is written by a runonce
+script, never as root at deploy time — a pref written as root reaches nobody.
+QuPath extensions are version-specific (0.6 jars do not load in 0.7): pin
+them from the catalogs' `version_range`, not from a bundle.
 
 ## Conventions
 

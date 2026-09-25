@@ -1,71 +1,32 @@
 ---
-# pixi_ai_tools_singleuser_launcher and pixi_ai_tools_jupyterhub_venv are set by
-# jupyter_venv.yml, which runs before this phase and before the desktop one.
+# JupyterHub flavour. A user can reach Lab without ever opening a login shell,
+# so runonce is run from the hub before their server starts.
 
-- name: Install pixi-kernel into the JupyterHub single-user venv
-  when: pixi_ai_tools_singleuser_launcher.matched > 0
-  ansible.builtin.pip:
-    name: pixi-kernel
-    virtualenv: "{{ pixi_ai_tools_jupyterhub_venv }}"
-
-- name: Deploy runonce wrapper script for JupyterHub pre-spawn
-  when: pixi_ai_tools_singleuser_launcher.matched > 0
+- name: Install the runonce wrapper for the hub's pre-spawn hook
   ansible.builtin.copy:
     src: run-runonce.sh
     dest: /usr/local/bin/run-runonce.sh
     mode: "0755"
-    owner: root
-    group: root
 
-- name: Check if JupyterHub config exists
-  when: pixi_ai_tools_singleuser_launcher.matched > 0
-  ansible.builtin.stat:
-    path: /etc/jupyterhub/jupyterhub_config.py
-  register: pixi_ai_tools_jupyterhub_config
-
-# This block is appended after SRC's own settings, so the c.Spawner.args
-# assignment here is the one that wins. SRC restricts the launcher to a
-# single kernel with --KernelSpecManager.whitelist={'src-default'}, which
-# silently hides every pixi kernel; we re-open it.
-- name: Add pre-spawn hook and lift the kernel allowlist in JupyterHub config
-  when: pixi_ai_tools_singleuser_launcher.matched > 0 and pixi_ai_tools_jupyterhub_config.stat.exists
+# Appended after SRC's own settings, so this c.Spawner.args wins. SRC limits Lab
+# to a single 'src-default' kernel, which hides every pixi kernel.
+- name: Add the pre-spawn hook and lift the kernel allowlist
   ansible.builtin.blockinfile:
     path: /etc/jupyterhub/jupyterhub_config.py
     marker: "# {mark} PIXI-AI-TOOLS PRE-SPAWN HOOK"
     block: |
-      import subprocess
       import os
+      import subprocess
 
       def pre_spawn_hook(spawner):
           """Run /etc/runonce.d scripts for users who log in via JupyterHub."""
           username = spawner.user.name
-          home_dir = os.path.expanduser(f"~{username}")
-          if os.path.islink(os.path.join(home_dir, "runonce.d")) and os.path.isdir("/etc/runonce.d"):
+          if os.path.islink(os.path.join(os.path.expanduser(f"~{username}"), "runonce.d")):
               subprocess.run(
                   ["sudo", "--set-home", "-u", username, "bash", "/usr/local/bin/run-runonce.sh"],
-                  timeout=600
+                  timeout=600,
               )
       c.Spawner.pre_spawn_hook = pre_spawn_hook
 
       c.Spawner.args = ["--KernelSpecManager.ensure_native_kernel=False"]
-
-- name: Restart JupyterHub to pick up pixi-kernel and config changes
-  when: pixi_ai_tools_singleuser_launcher.matched > 0
-  ansible.builtin.systemd:
-    name: jupyterhub
-    state: restarted
-    daemon_reload: true
-  failed_when: false
-
-- name: Display JupyterHub integration status
-  ansible.builtin.debug:
-    msg: >-
-      {% if pixi_ai_tools_singleuser_launcher.matched > 0 %}
-      pixi-kernel installed into {{ pixi_ai_tools_jupyterhub_venv }}. Pre-spawn hook
-      configured to run runonce scripts before the notebook server starts,
-      and the single-user kernel allowlist has been lifted so pixi kernels
-      appear in the JupyterLab launcher.
-      {% else %}
-      JupyterHub not detected — skipping pixi-kernel installation.
-      Users can use 'pixi shell' from the terminal instead.
-      {% endif %}
+  notify: Restart JupyterHub

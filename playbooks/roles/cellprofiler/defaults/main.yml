@@ -1,0 +1,9 @@
+---
+cellprofiler_dir: /opt/CellProfiler
+cellprofiler_pixi: /usr/local/bin/pixi
+# RunCellpose from CellProfiler-plugins, pinned to a commit.
+cellprofiler_runcellpose_url: >-
+  https://raw.githubusercontent.com/CellProfiler/CellProfiler-plugins/f44a3cacbac212c230ed7e1dae8a291d10bc5c00/active_plugins/runcellpose.py
+cellprofiler_command: >-
+  {{ cellprofiler_pixi }} run --frozen --manifest-path {{ cellprofiler_dir }}/pixi.toml
+  cellprofiler --plugins-directory {{ cellprofiler_dir }}/plugins

@@ -1,0 +1,20 @@
+// Run headless once per user by /etc/runonce.d/setup-qupath.sh. Written by
+// Ansible. Only fills in preferences the user has not set.
+import qupath.lib.gui.prefs.PathPrefs
+
+if (PathPrefs.userPathProperty().get() == null)
+    PathPrefs.userPathProperty().set("{{ qupath_user_dir }}")
+
+// Python for the cellpose (cellpose and cpsam models) and spotiflow extensions.
+def envs = "{{ qupath_pixi_envs_dir }}"
+def pythons = [
+    cellposePythonPath   : "${envs}/cellpose/.pixi/envs/default/bin/python",
+    cellposeSAMPythonPath: "${envs}/cellpose/.pixi/envs/default/bin/python",
+    spotiflowPythonPath  : "${envs}/spotiflow/.pixi/envs/default/bin/python",
+]
+def prefs = PathPrefs.getUserPreferences()
+pythons.each { key, path ->
+    if (new File(path).canExecute() && prefs.get(key, "").isEmpty())
+        prefs.put(key, path)
+}
+prefs.flush()

@@ -1,0 +1,6 @@
+---
+ilastik_version: "1.4.2"
+# The GPU build (4.9 GB against 0.7 GB) only speeds up the neural network
+# workflow. Taken when the workspace has an NVIDIA GPU, unless set here.
+ilastik_gpu: auto
+ilastik_link: /opt/ilastik

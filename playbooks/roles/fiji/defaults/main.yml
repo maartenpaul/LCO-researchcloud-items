@@ -1,0 +1,24 @@
+---
+fiji_dir: /opt/Fiji.app
+# Stable build with a bundled Java 8, as BIOP-desktop uses.
+fiji_url: https://downloads.imagej.net/fiji/stable/fiji-stable-linux64-jdk.zip
+fiji_launcher: "{{ fiji_dir }}/ImageJ-linux64"
+
+# From BIOP-desktop's Dockerfile-fiji, minus CSBDeep/StarDist/TensorFlow: the
+# pixi environments cover those tools.
+fiji_update_sites:
+  - {name: clij, url: "https://sites.imagej.net/clij/"}
+  - {name: clij2, url: "https://sites.imagej.net/clij2/"}
+  - {name: PTBIOP, url: "https://biop.epfl.ch/Fiji-Update"}
+  - {name: IBMP-CNRS, url: "https://sites.imagej.net/Mutterer/"}
+  - {name: 3D ImageJ Suite, url: "https://sites.imagej.net/Tboudier/"}
+  - {name: IJPB-plugins, url: "https://sites.imagej.net/IJPB-plugins/"}
+  - {name: ilastik, url: "https://sites.imagej.net/Ilastik/"}
+  - {name: OMERO 5.5-5.6, url: "https://sites.imagej.net/OMERO-5.5-5.6/"}
+  - {name: MiC mask comparator, url: "https://sites.imagej.net/MiC-mask-comparator/"}
+  - {name: Fiji-Deconv, url: "https://sites.imagej.net/clijx-deconvolution/"}
+  - {name: 3Dscript, url: "https://romulus.oice.uni-erlangen.de/updatesite/"}
+
+# Where the pixi_ai_tools role builds its environments; the BIOP cellpose
+# wrapper is pointed at the cellpose one when it exists.
+fiji_pixi_envs_dir: /opt/AI_tools_pixi

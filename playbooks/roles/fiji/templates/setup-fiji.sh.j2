@@ -1,0 +1,37 @@
+#!/bin/bash
+# setup-fiji.sh — per-user part of the fiji role, run once at first login.
+# Written by Ansible; safe to re-run by hand.
+
+# Point the BIOP cellpose wrapper (Plugins > BIOP > Cellpose) at the pixi
+# cellpose environment. On Linux its "conda" type just runs
+# <env_path>/bin/python -m cellpose, which fits a pixi env; "venv" is refused.
+# The wrapper keeps its last-used values in Java prefs; an existing file means
+# the user has run it before, so it is left alone.
+CELLPOSE_ENV={{ fiji_pixi_envs_dir }}/cellpose/.pixi/envs/default
+if [ -x "${CELLPOSE_ENV}/bin/python" ]; then
+    for cmd in Cellpose CellposeSAM; do
+        prefs="${HOME}/.java/.userPrefs/ch/epfl/biop/wrappers/cellpose/ij2commands/${cmd}/prefs.xml"
+        [ -e "${prefs}" ] && continue
+        mkdir -p "$(dirname "${prefs}")"
+        cat >"${prefs}" <<EOF
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE map SYSTEM "http://java.sun.com/dtd/preferences.dtd">
+<map MAP_XML_VERSION="1.0">
+<entry key="env_path" value="${CELLPOSE_ENV}"/>
+<entry key="env_type" value="conda"/>
+</map>
+EOF
+    done
+fi
+
+# XFCE asks "untrusted launcher?" unless the checksum is stored as GIO metadata.
+if [ -d /etc/xdg/xfce4 ]; then
+    mkdir -p "${HOME}/Desktop"
+    cp /usr/share/applications/fiji.desktop "${HOME}/Desktop/"
+    chmod +x "${HOME}/Desktop/fiji.desktop"
+    if command -v gio >/dev/null 2>&1; then
+        gio set -t string "${HOME}/Desktop/fiji.desktop" metadata::xfce-exe-checksum \
+            "$(sha256sum "${HOME}/Desktop/fiji.desktop" | cut -d' ' -f1)" 2>/dev/null || true
+        gio set -t string "${HOME}/Desktop/fiji.desktop" metadata::trusted true 2>/dev/null || true
+    fi
+fi

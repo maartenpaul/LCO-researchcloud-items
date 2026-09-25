@@ -1,0 +1,13 @@
+---
+# ilastik.yml — SURF Research Cloud component entry point.
+#
+# ilastik in /opt/ilastik, following BIOP-desktop's Dockerfile-ilastik. See
+# roles/ilastik/README.md. No parameters.
+
+- name: Install ilastik
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  roles:
+    - ilastik

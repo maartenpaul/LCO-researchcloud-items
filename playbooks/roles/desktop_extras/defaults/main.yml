@@ -1,0 +1,11 @@
+---
+desktop_extras_guac_conf: /etc/guacamole/noauth-config.xml
+# guacd runs as "daemon", so the drive cannot be $HOME itself: uploads would be
+# owned by daemon. One folder per user under here instead.
+desktop_extras_drive_root: /var/lib/guacamole/drive
+desktop_extras_packages:
+  - zip
+  - unzip
+  - 7zip
+  - xarchiver
+  - thunar-archive-plugin

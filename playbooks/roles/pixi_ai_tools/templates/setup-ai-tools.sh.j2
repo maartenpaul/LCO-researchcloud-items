@@ -1,0 +1,96 @@
+#!/bin/bash
+# setup-ai-tools.sh — per-user part of the pixi_ai_tools role, run once at first
+# login from /etc/runonce.d. Written by Ansible; safe to re-run by hand.
+#
+# Gives the user their own copy of each tool's manifest and lock file in
+# ~/AI_tools_pixi/<tool>, and a Jupyter kernel and menu entry that run from it.
+# pixi builds the environment the first time it is used, hardlinking out of the
+# shared cache filled by the deploy — seconds, and little extra disk. The copy
+# is the user's to change: `pixi add` in it, or delete it to start over.
+
+set -euo pipefail
+
+SHARED_DIR={{ pixi_ai_tools_shared_dir }}
+PIXI={{ pixi_ai_tools_bin }}
+TOOLS=({{ pixi_ai_tools_tools | join(' ') }})
+declare -A GUI=(
+{% for tool in pixi_ai_tools_gui_tools %}
+    [{{ tool }}]="{{ pixi_ai_tools_gui_commands[tool] }}|{{ pixi_ai_tools_icons_by_tool[tool] | default('pixi-napari') }}"
+{% endfor %}
+)
+MY_DIR="${HOME}/AI_tools_pixi"
+KERNELS="${HOME}/.local/share/jupyter/kernels"
+APPS="${HOME}/.local/share/applications"
+
+mkdir -p "${MY_DIR}" "${KERNELS}" "${APPS}"
+
+# XFCE asks "untrusted launcher?" on every click unless the file's checksum is
+# stored as GIO metadata.
+trust() {
+    command -v gio >/dev/null 2>&1 || return 0
+    gio set -t string "$1" metadata::xfce-exe-checksum "$(sha256sum "$1" | cut -d' ' -f1)" 2>/dev/null || true
+    gio set -t string "$1" metadata::trusted true 2>/dev/null || true
+}
+
+launcher() {  # launcher <file> <name> <exec> <icon> <terminal>
+    cat >"$1" <<EOF
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=$2
+Exec=$3
+Icon=$4
+Terminal=$5
+Categories=Science;ImageProcessing;
+StartupNotify=true
+EOF
+    chmod +x "$1"
+}
+
+for tool in "${TOOLS[@]}"; do
+    # Never overwrite: the copy may hold packages the user added.
+    mkdir -p "${MY_DIR}/${tool}"
+    for f in pixi.toml pixi.lock; do
+        [ -e "${MY_DIR}/${tool}/${f}" ] || [ ! -e "${SHARED_DIR}/${tool}/${f}" ] || cp "${SHARED_DIR}/${tool}/${f}" "${MY_DIR}/${tool}/"
+    done
+
+    mkdir -p "${KERNELS}/pixi-${tool}"
+    cat >"${KERNELS}/pixi-${tool}/kernel.json" <<EOF
+{
+  "argv": ["{{ pixi_ai_tools_kernel_wrapper }}", "${PIXI}", "run", "--manifest-path",
+           "${MY_DIR}/${tool}/pixi.toml",
+           "python", "-m", "ipykernel_launcher", "-f", "{connection_file}"],
+  "display_name": "${tool} (Pixi)",
+  "language": "python"
+}
+EOF
+
+    if [ -n "${GUI[${tool}]:-}" ]; then
+        launcher "${APPS}/pixi-${tool}.desktop" "${tool}" \
+            "{{ pixi_ai_tools_vglrun }}${PIXI} run --manifest-path ${MY_DIR}/${tool}/pixi.toml ${GUI[${tool}]%%|*}" \
+            "${GUI[${tool}]##*|}" false
+    fi
+done
+
+{% if pixi_ai_tools_lab_env in pixi_ai_tools_install_envs %}
+# Desktop flavour: no JupyterHub, so Lab comes from the shared jupyterlab env.
+launcher "${APPS}/pixi-jupyterlab.desktop" JupyterLab \
+    "${SHARED_DIR}/{{ pixi_ai_tools_lab_env }}/.pixi/envs/default/bin/jupyter-lab --ServerApp.root_dir=${HOME}" \
+    pixi-jupyter true
+{% endif %}
+
+if ! grep -q 'pixi completion' "${HOME}/.bashrc" 2>/dev/null; then
+    cat >>"${HOME}/.bashrc" <<'EOF'
+eval "$(pixi completion --shell bash)"
+EOF
+fi
+
+# Desktop icons, where there is a desktop.
+if [ -d /etc/xdg/xfce4 ]; then
+    mkdir -p "${HOME}/Desktop"
+    for f in "${APPS}"/pixi-*.desktop; do
+        [ -f "${f}" ] || continue
+        cp "${f}" "${HOME}/Desktop/"
+        trust "${HOME}/Desktop/$(basename "${f}")"
+    done
+fi

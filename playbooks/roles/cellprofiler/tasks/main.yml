@@ -1,0 +1,87 @@
+---
+- name: Check for pixi
+  ansible.builtin.stat:
+    path: "{{ cellprofiler_pixi }}"
+  register: cellprofiler_pixi_bin
+
+- name: Fail without pixi
+  ansible.builtin.fail:
+    msg: "CellProfiler is installed with pixi: add the Pixi AI Tools component first."
+  when: not cellprofiler_pixi_bin.stat.exists
+
+- name: Create the CellProfiler directories
+  ansible.builtin.file:
+    path: "{{ cellprofiler_dir }}/plugins"
+    state: directory
+    mode: "0755"
+
+- name: Install the manifest and lock file
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ cellprofiler_dir }}/{{ item }}"
+    mode: "0644"
+  loop: [pixi.toml, pixi.lock]
+
+# Through /etc/pixi/config.toml this shares the package cache with the pixi
+# tool environments, so torch is not stored twice. --locked: install exactly
+# the lock, and fail if it has drifted from the manifest.
+- name: Build the CellProfiler environment
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      meta={{ cellprofiler_dir }}/.pixi/envs/default/conda-meta
+      before=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
+      {{ cellprofiler_pixi }} install --locked --manifest-path {{ cellprofiler_dir }}/pixi.toml
+      after=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
+      [ "$before" = "$after" ] && echo pixi-unchanged || echo pixi-changed
+    executable: /bin/bash
+  register: cellprofiler_build
+  changed_when: "'pixi-changed' in cellprofiler_build.stdout"
+
+- name: Install the RunCellpose plugin
+  ansible.builtin.get_url:
+    url: "{{ cellprofiler_runcellpose_url }}"
+    dest: "{{ cellprofiler_dir }}/plugins/runcellpose.py"
+    mode: "0644"
+
+- name: Find the CellProfiler icon
+  ansible.builtin.find:
+    paths: "{{ cellprofiler_dir }}/.pixi/envs/default/lib"
+    patterns: "CellProfiler*.png"
+    recurse: true
+  register: cellprofiler_icons
+
+# `pixi run` rather than the binary: the environment's activation sets
+# JAVA_HOME for the Java bridge. --frozen: users only read /opt.
+- name: Add CellProfiler to the application menu
+  ansible.builtin.copy:
+    dest: /usr/share/applications/cellprofiler.desktop
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Version=1.0
+      Type=Application
+      Name=CellProfiler
+      Comment=Image analysis pipelines, with RunCellpose
+      Exec={{ cellprofiler_command }}
+      Icon={{ (cellprofiler_icons.files | map(attribute='path') | sort | last) | default('applications-science') }}
+      Terminal=false
+      StartupNotify=true
+      Categories=Science;ImageProcessing;
+
+- name: Install uusrc.general Ansible collection
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | dirname }}/ansible-galaxy
+      collection install -r {{ playbook_dir }}/requirements.yml
+    creates: /root/.ansible/collections/ansible_collections/uusrc/general
+
+- name: Include uusrc.general.runonce role
+  ansible.builtin.include_role:
+    name: uusrc.general.runonce
+
+- name: Install the per-user desktop icon
+  ansible.builtin.template:
+    src: setup-cellprofiler.sh.j2
+    dest: /etc/runonce.d/setup-cellprofiler.sh
+    mode: "0755"
