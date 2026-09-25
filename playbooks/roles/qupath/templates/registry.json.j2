@@ -1,0 +1,12 @@
+{% set catalogs = [] %}
+{% for catalog in qupath_catalogs %}
+{%   set extensions = [] %}
+{%   for ext in catalog.extensions %}
+{%     set _ = extensions.append({'name': ext.name, 'installedVersion': ext.version,
+                                  'optionalDependenciesInstalled': false}) %}
+{%   endfor %}
+{%   set _ = catalogs.append({'name': catalog.name, 'description': catalog.description,
+                              'uri': catalog.uri, 'rawUri': catalog.raw_uri,
+                              'deletable': catalog.deletable, 'extensions': extensions}) %}
+{% endfor %}
+{{ {'catalogs': catalogs} | to_nice_json }}

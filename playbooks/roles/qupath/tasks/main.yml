@@ -30,22 +30,54 @@
     path: "{{ qupath_user_dir }}/{{ item }}"
     state: directory
     mode: "0777"
-  loop: [extensions, stardist]
+  loop: [extensions, extensions/catalogs, stardist]
+
+- name: List the extensions to install
+  ansible.builtin.set_fact:
+    qupath_extension_list: >-
+      {{ qupath_extension_list | default([]) + [item.1 | combine({'dir': qupath_extension_dir})] }}
+  loop: "{{ qupath_catalogs | subelements('extensions') }}"
+  loop_control:
+    label: "{{ item.1.name }}"
+  vars:
+    qupath_extension_dir: >-
+      {{ qupath_user_dir }}/extensions/catalogs/{{ item.0.name }}/{{ item.1.name }}/{{ item.1.version }}/main-jar
+
+- name: Create the extension directories
+  ansible.builtin.file:
+    path: "{{ item.dir }}"
+    state: directory
+    mode: "0777"
+  loop: "{{ qupath_extension_list }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Download the extension jars
   ansible.builtin.get_url:
-    url: "{{ item }}"
-    dest: "{{ qupath_user_dir }}/extensions/"
+    url: "{{ item.url }}"
+    dest: "{{ item.dir }}/"
     mode: "0644"
-  loop: "{{ qupath_extensions | reject('search', '\\.zip$') | list }}"
+  loop: "{{ qupath_extension_list | rejectattr('url', 'search', '\\.zip$') }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Download and unpack the extension zips
   ansible.builtin.unarchive:
-    src: "{{ item }}"
-    dest: "{{ qupath_user_dir }}/extensions"
+    src: "{{ item.url }}"
+    dest: "{{ item.dir }}"
     remote_src: true
-    creates: "{{ qupath_user_dir }}/extensions/{{ item | basename | regex_replace('\\.zip$', '.jar') }}"
-  loop: "{{ qupath_extensions | select('search', '\\.zip$') | list }}"
+    creates: "{{ item.dir }}/{{ item.url | basename | regex_replace('\\.zip$', '.jar') }}"
+  loop: "{{ qupath_extension_list | selectattr('url', 'search', '\\.zip$') }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# Writable by everyone: an extension a user adds from QuPath goes in here too.
+# A redeploy rewrites it with the pinned list.
+- name: Record the extensions in QuPath's registry
+  ansible.builtin.template:
+    src: registry.json.j2
+    dest: "{{ qupath_user_dir }}/extensions/catalogs/registry.json"
+    mode: "0666"
 
 - name: Download the StarDist models
   ansible.builtin.get_url:
