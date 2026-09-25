@@ -1,0 +1,188 @@
+---
+- name: Install system dependencies
+  when: ansible_pkg_mgr | default('apt') == 'apt'
+  ansible.builtin.apt:
+    name:
+      - acl
+      - bzip2
+      - ca-certificates
+      - curl
+    state: present
+    update_cache: true
+  # Apt mirror hiccups on a fresh workspace should not fail the whole build.
+  failed_when: false
+
+# The Miniforge installer does not record which release it came from anywhere we
+# can read back — `conda --version` prints the conda version, which is only part
+# of the tag — so the role stamps the tag itself and compares against that.
+- name: Read the installed Miniforge stamp
+  ansible.builtin.slurp:
+    src: "{{ conda_dir }}/.miniforge_version"
+  register: conda_stamp
+  failed_when: false
+  changed_when: false
+
+- name: Work out whether Miniforge has to be installed
+  ansible.builtin.set_fact:
+    conda_installed_version: >-
+      {{ (conda_stamp.content | b64decode | trim) if conda_stamp.content is defined else '' }}
+
+- name: Decide whether to run the Miniforge installer
+  ansible.builtin.set_fact:
+    conda_install: "{{ conda_installed_version != (conda_version | trim) }}"
+
+- name: Install Miniforge at the pinned version
+  when: conda_install | bool
+  block:
+    - name: Download the Miniforge installer
+      ansible.builtin.get_url:
+        url: "{{ conda_installer_url }}"
+        dest: /tmp/miniforge-install.sh
+        mode: "0755"
+
+    # -b is batch (no prompts, no shell init), -p the prefix, -u update in
+    # place. Without -u the installer refuses to touch an existing prefix, so a
+    # version bump would fail instead of upgrading. -u keeps ~/.conda
+    # environments, which live outside the prefix, untouched either way.
+    - name: Run the Miniforge installer
+      ansible.builtin.command:
+        cmd: bash /tmp/miniforge-install.sh -b -u -p {{ conda_dir }}
+      changed_when: true
+
+    - name: Stamp the installed Miniforge version
+      ansible.builtin.copy:
+        content: "{{ conda_version | trim }}\n"
+        dest: "{{ conda_dir }}/.miniforge_version"
+        mode: "0644"
+
+  always:
+    - name: Remove the Miniforge installer
+      ansible.builtin.file:
+        path: /tmp/miniforge-install.sh
+        state: absent
+
+- name: Verify the conda installation
+  ansible.builtin.command: "{{ conda_dir }}/bin/conda --version"
+  register: conda_check
+  changed_when: false
+
+- name: Display the conda version
+  ansible.builtin.debug:
+    msg: "{{ conda_check.stdout | trim }} (Miniforge {{ conda_version | trim }})"
+
+# The prefix stays root-owned: users get environments of their own under
+# ~/.conda/envs, which is conda's first writable fallback, and `conda install`
+# into /opt would otherwise let one user change everyone's base.
+- name: Make the conda prefix world-readable and root-owned
+  ansible.builtin.file:
+    path: "{{ conda_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Same problem, and the same fix, as the shared pixi cache: on a desktop-flavour
+# workspace every user has a private primary group, so "most common primary
+# group" picks one student's own group and nobody else can write to the cache.
+# Look at every group the workspace users are in and prefer the SRC
+# collaborative organisation, which is named rsc_co_<id>.
+- name: Discover the group shared by workspace users
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      users=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\// { print $1 }')
+      [ -n "$users" ] || exit 0
+      memberships() {
+          for u in $users; do
+              # A user's own private group says nothing about who they share with.
+              id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -vx "$u"
+          done
+      }
+      co=$(memberships | grep -E '^rsc_co_[0-9]+$' | sort | uniq -c | sort -rn |
+           head -1 | awk '{print $2}')
+      if [ -n "$co" ]; then
+          echo "$co"
+          exit 0
+      fi
+      # Not an SRC workspace: fall back to the most widely shared non-system
+      # group, skipping the ones every Ubuntu account happens to be in.
+      memberships |
+          grep -vxE 'sudo|sudoers|users|adm|cdrom|dip|plugdev|lxd|fuse|video|render' |
+          sort | uniq -c | sort -rn | head -1 | awk '{print $2}'
+    executable: /bin/bash
+  register: conda_co_gid_raw
+  changed_when: false
+
+- name: Set workspace group fact
+  ansible.builtin.set_fact:
+    conda_workspace_gid: "{{ conda_co_gid_raw.stdout | trim }}"
+
+- name: Report the group that will own the shared package cache
+  ansible.builtin.debug:
+    msg: >-
+      {% if conda_workspace_gid | length > 0 %}
+      Shared conda package cache group: {{ conda_workspace_gid }}. Environments
+      users create hardlink their packages out of {{ conda_pkgs_dir }}.
+      {% else %}
+      No shared group found for the workspace users — {{ conda_pkgs_dir }} stays
+      root-only and conda will fall back to each user's own ~/.conda/pkgs.
+      {% endif %}
+
+- name: Create the shared package cache
+  ansible.builtin.file:
+    path: "{{ conda_pkgs_dir }}"
+    state: directory
+    owner: root
+    group: "{{ conda_workspace_gid if conda_workspace_gid | length > 0 else omit }}"
+    # setgid, so packages one user downloads stay writable by the next.
+    mode: "2775"
+
+- name: Grant the workspace group write access to the shared package cache
+  ansible.builtin.command:
+    cmd: >-
+      setfacl -R -m g:{{ conda_workspace_gid }}:rwX -m d:g:{{ conda_workspace_gid }}:rwX
+      {{ conda_pkgs_dir }}
+  when: conda_workspace_gid | length > 0
+  changed_when: true
+
+- name: Create the system conda configuration directory
+  ansible.builtin.file:
+    path: "{{ conda_condarc | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the system conda configuration
+  ansible.builtin.template:
+    src: condarc.j2
+    dest: "{{ conda_condarc }}"
+    mode: "0644"
+
+- name: Install the conda shell hook for login shells
+  ansible.builtin.template:
+    src: conda.sh.j2
+    dest: "{{ conda_profile_snippet }}"
+    mode: "0644"
+
+# /etc/profile.d runs for login shells only. A terminal in the XFCE desktop, a
+# tmux pane or a shell opened inside JupyterLab is an interactive non-login
+# shell, which reads /etc/bash.bashrc instead and would have no `conda` at all.
+# Ubuntu's /etc/bash.bashrc returns early for non-interactive shells before this
+# block is reached, so appending here costs nothing to scripts.
+- name: Install the conda shell hook for interactive non-login shells
+  ansible.builtin.blockinfile:
+    path: /etc/bash.bashrc
+    create: true
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: conda"
+    block: |
+      if [ -f {{ conda_profile_snippet }} ]; then
+          . {{ conda_profile_snippet }}
+      fi
+
+- name: Report how to use conda
+  ansible.builtin.debug:
+    msg: >-
+      conda is available in new shells as a function; base is
+      {{ 'activated automatically' if conda_auto_activate | bool else 'not activated' }}.
+      Users create their own environments with
+      `conda create -n <name> python=3.12`, which land in ~/.conda/envs.
