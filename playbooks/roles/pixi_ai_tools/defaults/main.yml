@@ -1,116 +1,60 @@
 ---
-# SRC parameters. A component parameter reaches an Ansible playbook as a
-# variable named after its key — not as an environment variable, which is the
-# PowerShell/Windows mechanism. Reading these with lookup('env', ...) alone
-# silently ignored everything set in the portal and always used the defaults
-# below. The env lookup is kept only as a fallback so the role can be driven
-# from a shell when testing outside SRC.
+# SRC parameters. SRC passes each component parameter to the playbook as an
+# Ansible variable named after its key. The env lookup is only a fallback for
+# driving the role from a shell when testing outside SRC.
 pixi_ai_tools_version: >-
   {{ PIXI_AI_TOOLS_VERSION | default(lookup('env', 'PIXI_AI_TOOLS_VERSION'), true)
      | default('master', true) }}
 
-# Comma-separated tool list to pre-install, or "all". Tools that are not
-# pre-installed get no shared kernel — users cannot install into /opt.
-# "all" builds every environment in the repository, which is a long deploy;
-# naming just the tools a course needs keeps it short.
+# Comma-separated tools to build in /opt, or "all". Only these get a kernel, a
+# menu entry and a copy in each user's ~/AI_tools_pixi.
 pixi_ai_tools_preload: >-
   {{ PIXI_AI_TOOLS_PRELOAD | default(lookup('env', 'PIXI_AI_TOOLS_PRELOAD'), true)
      | default('all', true) }}
 
-# Off by default: the desktop costs roughly 200 packages and about a gigabyte,
-# which is wasted on a workspace where nobody opens a GUI tool. Turn it on for
-# courses that use napari.
-#
-# Install-only. Setting this back to false on a workspace that was deployed with
-# it true only skips the desktop phase; it does not undo it. The kernels do
-# converge — kernels.yml keys the display wrapper off this same variable and
-# rewrites every kernel.json without it — so nothing breaks, but XFCE,
-# VirtualGL, the menu entries, the wrappers and the Desktop tile stay, and the
-# gigabyte is not reclaimed. To actually drop the desktop, redeploy the
-# workspace from scratch with it off.
+# XFCE + noVNC behind JupyterLab's "Desktop" tile, for the JupyterHub flavour.
+# ~200 packages; install-only (setting it back to false does not remove it).
 pixi_ai_tools_desktop: >-
   {{ PIXI_AI_TOOLS_DESKTOP | default(lookup('env', 'PIXI_AI_TOOLS_DESKTOP'), true)
      | default(false, true) }}
 
-# Give every user their own copy of each tool, in ~/AI_tools_pixi, made from the
-# shared environment the first time they start its kernel or menu entry. Users
-# can then "%pip install" in a notebook, or `pixi add`, without affecting anyone
-# else. The shared environments in /opt stay as the source of truth and as the
-# warm package cache that makes a copy take seconds.
-#
-# Meant for workspaces with one or two users. A copy costs ~0.1-0.4 GB of real
-# disk per tool per user (the rest is hardlinked from the shared cache), so ~3 GB
-# for all tools — fine on a personal workspace, ~90 GB on one shared by 30.
-#
-# A redeploy updates only /opt; existing copies keep their versions until the
-# user runs `ai-tools reset <tool>`.
-pixi_ai_tools_per_user_envs: >-
-  {{ PIXI_AI_TOOLS_PER_USER_ENVS | default(lookup('env', 'PIXI_AI_TOOLS_PER_USER_ENVS'), true)
-     | default(false, true) }}
-
-# Pinned so a redeploy installs the pixi it installed last time, and so a new
-# pixi can be tried on one workspace before it becomes everyone's. "latest"
-# restores the old behaviour of taking whatever is current at install time.
-# 0.78.0 is the version this component has been tested against.
+# Pinned so two workspaces built from the same component get the same pixi.
+# "latest" only installs pixi where it is missing.
 pixi_ai_tools_pixi_version: >-
   {{ PIXI_AI_TOOLS_PIXI_VERSION | default(lookup('env', 'PIXI_AI_TOOLS_PIXI_VERSION'), true)
      | default('0.78.0', true) }}
 
-# NVIDIA driver branch to install when a GPU is present but nvidia-smi does not
-# work — normally because SRC's CUDA component was left out of the catalog item.
-# Never touches a working driver. Pinned to a branch because the unpinned
-# `cuda-drivers` package follows NVIDIA's newest release, which is what broke
-# SRC's component in September 2026. "none" disables the fallback.
-# 580 was verified on an A10 workspace with Ubuntu 24.04.
-pixi_ai_tools_nvidia_driver: >-
-  {{ PIXI_AI_TOOLS_NVIDIA_DRIVER | default(lookup('env', 'PIXI_AI_TOOLS_NVIDIA_DRIVER'), true)
-     | default('580', true) }}
-pixi_ai_tools_cuda_keyring_url: >-
-  https://developer.download.nvidia.com/compute/cuda/repos/ubuntu{{
-  ansible_facts['distribution_version'] | replace('.', '') }}/x86_64/cuda-keyring_1.1-1_all.deb
-
 pixi_ai_tools_home: /usr/local
 pixi_ai_tools_bin: /usr/local/bin/pixi
-pixi_ai_tools_runonce_dir: /etc/runonce.d
 pixi_ai_tools_repo_url: https://github.com/Leiden-Cell-Observatory/AI_tools_pixi.git
-# One shared, root-owned copy of the tools + one shared package cache.
-# Per-user clones would multiply 5-10 GB per env by the number of students.
 pixi_ai_tools_shared_dir: /opt/AI_tools_pixi
 pixi_ai_tools_cache_dir: /opt/pixi-cache
-# The environment in the shared checkout that provides the JupyterLab *server*
-# for the desktop flavour, where SRC installs no Lab of its own. It is not a
-# tool: it gets no kernel and no menu entry, and it is installed only where it
-# is needed — a JupyterHub workspace spawns Lab from its own venv and never
-# looks at this. Set to "" to never install it.
+# Environment holding the JupyterLab server for the desktop flavour, which has
+# no Lab of its own. Not a tool: no kernel, no menu entry, no user copy.
 pixi_ai_tools_lab_env: jupyterlab
-pixi_ai_tools_kernel_dir: /usr/local/share/jupyter/kernels
 pixi_ai_tools_kernel_wrapper: /usr/local/bin/ai-tools-kernel
 pixi_ai_tools_icon_dir: /usr/share/icons/hicolor
-# The noVNC/XFCE session behind JupyterLab's "Desktop" tile. Pinned for the same
-# reason as VirtualGL below: a redeploy should install what it installed last
-# time rather than whatever upstream has released since.
 pixi_ai_tools_rdp_version: "3.0.1"
 
-# VirtualGL is not in the Ubuntu archive, so it is fetched from the project's
-# own releases. Pinned by version and checksum so a redeploy of this component
-# installs what it installed last time; bump both together.
+# Not in the Ubuntu archive; pinned by version and checksum, bump both together.
 pixi_ai_tools_virtualgl_version: "3.1.5"
 pixi_ai_tools_virtualgl_sha256: df3f7788ce41b182a47c0d298e5cd6d2d63579522cb41825970b7726e825485e
 pixi_ai_tools_virtualgl_deb: "virtualgl_{{ pixi_ai_tools_virtualgl_version }}_amd64.deb"
-# The line break sits inside the Jinja expression, where the folded-scalar
-# newline becomes an ignored space rather than a space in the URL.
 pixi_ai_tools_virtualgl_url: >-
   https://github.com/VirtualGL/virtualgl/releases/download/{{
   pixi_ai_tools_virtualgl_version }}/{{ pixi_ai_tools_virtualgl_deb }}
 
-# Tools whose interface is not napari. Anything not listed here gets a launcher
-# only if its environment registers a napari plugin, and is launched with
-# napari; cellpose has its own GUI and no plugin.
+# Tools with a GUI, and the command that opens it. A preloaded tool listed here
+# gets a menu entry and a Desktop icon; everything else is notebook-only.
 pixi_ai_tools_gui_commands:
   cellpose: python -m cellpose
+  CAREamics: napari
+  micro_sam: napari
+  nninteractive: napari
+  omero: napari
+  stardist: napari
 
-# Icon name per tool, from files/icons. Anything unlisted falls back to the
-# generic napari icon, which is the right picture for a napari plugin.
+# Icon per tool, from files/icons; unlisted tools get the napari icon.
 pixi_ai_tools_icons_by_tool:
   cellpose: pixi-cellpose
   micro_sam: pixi-micro_sam

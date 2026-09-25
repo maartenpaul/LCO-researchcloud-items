@@ -1,4 +1,9 @@
 ---
+# Tool environments are built once, root-owned, in /opt/AI_tools_pixi, filling
+# a shared package cache. Each user gets their own copy of every manifest and
+# lock file in ~/AI_tools_pixi; pixi builds that copy on first use by
+# hardlinking out of the cache, so it takes seconds and a fraction of the disk.
+
 - name: Wait for system to become reachable
   ansible.builtin.wait_for_connection:
     timeout: 300
@@ -11,42 +16,244 @@
     msg: "This component only supports Debian-family distributions (Ubuntu)."
   when: ansible_facts['os_family'] != 'Debian'
 
-- name: Install pixi and its system dependencies
-  ansible.builtin.import_tasks: pixi.yml
+- name: Install required system packages
+  ansible.builtin.apt:
+    name: [git, curl, ca-certificates, acl]
+    state: present
+    update_cache: true
 
-- name: Set up the per-user runonce mechanism
-  ansible.builtin.import_tasks: runonce.yml
+# --- pixi, pinned -----------------------------------------------------------
 
-# Before render.yml, which decides on VirtualGL from the driver's device node.
-- name: Make sure a GPU that is present has a working driver
-  ansible.builtin.import_tasks: gpu.yml
+- name: Check which pixi version is installed
+  ansible.builtin.command: "{{ pixi_ai_tools_bin }} --version"
+  register: pixi_ai_tools_pixi_installed
+  changed_when: false
+  failed_when: false
 
-# Before the shared checkout, which needs to know whether this workspace has a
-# JupyterHub of its own to decide whether the Lab environment is wanted.
-- name: Locate the JupyterHub single-user venv
-  ansible.builtin.import_tasks: jupyter_venv.yml
+# `pixi --version` prints "pixi 0.78.0"; the parameter may carry a leading v.
+- name: Decide whether to run the pixi installer
+  ansible.builtin.set_fact:
+    pixi_ai_tools_pixi_wanted: "{{ pixi_ai_tools_pixi_version | regex_replace('^v', '') }}"
+    pixi_ai_tools_pixi_current: >-
+      {{ (pixi_ai_tools_pixi_installed.stdout | trim | regex_replace('^pixi ', ''))
+         if pixi_ai_tools_pixi_installed.rc == 0 else '' }}
 
-- name: Deploy the shared tool checkout and package cache
-  ansible.builtin.import_tasks: shared_env.yml
+- name: Install pixi at the pinned version
+  when: >-
+    pixi_ai_tools_pixi_current | length == 0
+    or (pixi_ai_tools_pixi_wanted != 'latest'
+        and pixi_ai_tools_pixi_current != pixi_ai_tools_pixi_wanted)
+  block:
+    - name: Download pixi installer
+      ansible.builtin.get_url:
+        url: https://pixi.sh/install.sh
+        dest: /tmp/pixi-install.sh
+        mode: "0755"
 
-# Before the desktop phase, whose napari probe calls ai-tools-has-gui.
-- name: Install the user-facing helper scripts
-  ansible.builtin.import_tasks: helpers.yml
+    - name: Install pixi
+      ansible.builtin.command:
+        cmd: bash /tmp/pixi-install.sh
+      environment:
+        PIXI_HOME: "{{ pixi_ai_tools_home }}"
+        PIXI_VERSION: "{{ pixi_ai_tools_pixi_wanted }}"
+      changed_when: true
+  always:
+    - name: Remove pixi installer
+      ansible.builtin.file:
+        path: /tmp/pixi-install.sh
+        state: absent
 
-- name: Write the application menu entries and icons
-  ansible.builtin.import_tasks: launchers.yml
+- name: Verify the installed pixi is the pinned one
+  ansible.builtin.command: "{{ pixi_ai_tools_bin }} --version"
+  register: pixi_ai_tools_pixi_check
+  changed_when: false
+  failed_when: >-
+    pixi_ai_tools_pixi_check.rc != 0
+    or (pixi_ai_tools_pixi_wanted != 'latest'
+        and pixi_ai_tools_pixi_check.stdout | trim | regex_replace('^pixi ', '')
+            != pixi_ai_tools_pixi_wanted)
 
-# Before the kernels, which are wrapped in the display helper it installs.
-- name: Install GPU rendering and the notebook display wrapper
-  ansible.builtin.import_tasks: render.yml
+# --- shared checkout and cache ----------------------------------------------
 
-# Before the JupyterHub phase, whose restart picks up the desktop extension.
-- name: Install the remote desktop for GUI tools
-  ansible.builtin.import_tasks: desktop.yml
-  when: pixi_ai_tools_desktop | bool
+# force: false — a hand edit in /opt stops the deploy here instead of being
+# silently discarded.
+- name: Clone AI_tools_pixi to the shared location
+  ansible.builtin.git:
+    repo: "{{ pixi_ai_tools_repo_url }}"
+    dest: "{{ pixi_ai_tools_shared_dir }}"
+    version: "{{ pixi_ai_tools_version }}"
+    depth: 1
+    force: false
 
-- name: Register system-wide Jupyter kernels
-  ansible.builtin.import_tasks: kernels.yml
+- name: Discover tools in the shared checkout
+  ansible.builtin.find:
+    paths: "{{ pixi_ai_tools_shared_dir }}"
+    patterns: pixi.toml
+    recurse: true
+    depth: 2
+  register: pixi_ai_tools_manifests
 
-- name: Integrate with JupyterHub when present
+# SRC ships its JupyterHub single-user server in /etc/src/venv/jupyter-venv; the
+# desktop flavour has none, and gets the Lab environment instead.
+- name: Check for SRC's JupyterHub
+  ansible.builtin.stat:
+    path: /etc/src/venv/jupyter-venv/bin/jupyterhub-singleuser
+  register: pixi_ai_tools_hub
+
+- name: List the environments in the checkout
+  ansible.builtin.set_fact:
+    pixi_ai_tools_available: >-
+      {{ pixi_ai_tools_manifests.files | map(attribute='path') | map('dirname')
+         | map('basename') | reject('equalto', pixi_ai_tools_lab_env) | sort }}
+    pixi_ai_tools_has_lab_env: >-
+      {{ (pixi_ai_tools_shared_dir ~ '/' ~ pixi_ai_tools_lab_env ~ '/pixi.toml')
+         in (pixi_ai_tools_manifests.files | map(attribute='path')) }}
+
+- name: Resolve the tools to build
+  ansible.builtin.set_fact:
+    pixi_ai_tools_tools: >-
+      {{ pixi_ai_tools_available if pixi_ai_tools_preload | lower == 'all'
+         else (pixi_ai_tools_preload.split(',') | map('trim')
+               | select('in', pixi_ai_tools_available) | list) }}
+
+- name: Add the Lab environment where there is no JupyterHub
+  ansible.builtin.set_fact:
+    pixi_ai_tools_install_envs: >-
+      {{ pixi_ai_tools_tools
+         + ([pixi_ai_tools_lab_env]
+            if pixi_ai_tools_has_lab_env | bool and not pixi_ai_tools_hub.stat.exists else []) }}
+
+- name: Report the tools to build
+  ansible.builtin.debug:
+    msg: "Building: {{ pixi_ai_tools_install_envs | join(', ') }}"
+
+- name: Create the shared pixi cache
+  ansible.builtin.file:
+    path: "{{ pixi_ai_tools_cache_dir }}"
+    state: directory
+    mode: "0755"
+
+# The long pole of the deploy. --locked installs exactly the lock and never
+# rewrites it, which keeps the checkout clean for the next deploy, and fails if
+# a lock has drifted from its manifest. `set -e` makes that failure reach
+# Ansible; `changed` comes from conda-meta, which changes exactly when packages
+# do.
+- name: Build the shared environments
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      meta="{{ pixi_ai_tools_shared_dir }}/{{ item }}/.pixi/envs/default/conda-meta"
+      before=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
+      "{{ pixi_ai_tools_bin }}" install --locked \
+        --manifest-path "{{ pixi_ai_tools_shared_dir }}/{{ item }}/pixi.toml"
+      after=$(stat -c %Y "$meta" 2>/dev/null || echo absent)
+      [ "$before" = "$after" ] && echo pixi-unchanged || echo pixi-changed
+    executable: /bin/bash
+  environment:
+    PIXI_CACHE_DIR: "{{ pixi_ai_tools_cache_dir }}"
+  loop: "{{ pixi_ai_tools_install_envs }}"
+  register: pixi_ai_tools_build
+  changed_when: "'pixi-changed' in pixi_ai_tools_build.stdout"
+
+# Users' copies hardlink out of the cache and write lock and repodata files
+# into it, so it must be writable by every workspace user. SRC puts all members
+# in the CO's rsc_co_<id> group; the most common one among /home users is it.
+- name: Find the workspace's CO group
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\// { print $1 }' |
+        xargs -r -n1 id -nG | tr ' ' '\n' | grep -E '^rsc_co_[0-9]+$' |
+        sort | uniq -c | sort -rn | awk 'NR == 1 { print $2 }'
+    executable: /bin/bash
+  register: pixi_ai_tools_co_group
+  changed_when: false
+
+- name: Give the CO group write access to the shared cache
+  ansible.builtin.command:
+    cmd: >-
+      setfacl -R -m g:{{ pixi_ai_tools_co_group.stdout }}:rwX
+      -m d:g:{{ pixi_ai_tools_co_group.stdout }}:rwX {{ pixi_ai_tools_cache_dir }}
+  when: pixi_ai_tools_co_group.stdout | length > 0
+  changed_when: true
+
+# pixi writes repodata shards 0600, which empties the ACL mask and so voids the
+# group entry above: the next user's `pixi add` fails with "Permission denied".
+# Resetting the mask restores it; the timer repeats that for new shards.
+- name: Install the cache permission fix
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/pixi-cache-perms.{{ item.ext }}"
+    mode: "0644"
+    content: "{{ item.content }}"
+  loop:
+    - ext: service
+      content: |
+        [Unit]
+        Description=Keep the shared pixi cache group-writable
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/setfacl -R -m m::rwX {{ pixi_ai_tools_cache_dir }}
+    - ext: timer
+      content: |
+        [Unit]
+        Description=Keep the shared pixi cache group-writable
+        [Timer]
+        OnBootSec=5min
+        OnUnitActiveSec=10min
+        [Install]
+        WantedBy=timers.target
+  loop_control:
+    label: "{{ item.ext }}"
+  when: pixi_ai_tools_co_group.stdout | length > 0
+
+- name: Enable the cache permission fix
+  ansible.builtin.systemd:
+    name: pixi-cache-perms.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: pixi_ai_tools_co_group.stdout | length > 0
+
+- name: Report the cache group
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Shared cache group: ' ~ pixi_ai_tools_co_group.stdout
+         if pixi_ai_tools_co_group.stdout | length > 0 else
+         'No rsc_co_ group found: the cache is root-only and users cannot build their copies.' }}
+
+- name: Export the shared cache to login shells
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    regexp: '^PIXI_CACHE_DIR='
+    line: "PIXI_CACHE_DIR={{ pixi_ai_tools_cache_dir }}"
+    create: true
+    mode: "0644"
+
+# --- GUI, per-user setup, JupyterHub ----------------------------------------
+
+- name: Install GUI support
+  ansible.builtin.import_tasks: gui.yml
+
+# ansible-galaxy sits next to the interpreter running this playbook; under
+# sudo it is not on PATH.
+- name: Install uusrc.general Ansible collection
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | dirname }}/ansible-galaxy
+      collection install -r {{ playbook_dir }}/requirements.yml --force
+  register: pixi_ai_tools_galaxy
+  changed_when: "'Installing' in pixi_ai_tools_galaxy.stdout"
+
+- name: Include uusrc.general.runonce role
+  ansible.builtin.include_role:
+    name: uusrc.general.runonce
+
+- name: Install the per-user setup script
+  ansible.builtin.template:
+    src: setup-ai-tools.sh.j2
+    dest: /etc/runonce.d/setup-ai-tools.sh
+    mode: "0755"
+
+- name: Integrate with JupyterHub
   ansible.builtin.import_tasks: jupyterhub.yml
+  when: pixi_ai_tools_hub.stat.exists

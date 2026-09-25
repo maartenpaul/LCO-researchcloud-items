@@ -1,0 +1,94 @@
+---
+# Display and GPU rendering for the GUI tools, on any flavour: the desktop
+# flavour brings its own desktop and still wants VirtualGL and the icons.
+
+- name: Decide which tools get a menu entry
+  ansible.builtin.set_fact:
+    pixi_ai_tools_gui_tools: "{{ pixi_ai_tools_tools | select('in', pixi_ai_tools_gui_commands) | list }}"
+
+- name: Check for the NVIDIA device node used by VirtualGL
+  ansible.builtin.stat:
+    path: /dev/nvidiactl
+  register: pixi_ai_tools_nvidiactl
+
+# Decided here, once, and written into the launchers.
+- name: Decide whether GUI tools render on the GPU
+  ansible.builtin.set_fact:
+    pixi_ai_tools_vglrun: >-
+      {{ '/opt/VirtualGL/bin/vglrun -d egl '
+         if pixi_ai_tools_nvidiactl.stat.exists and pixi_ai_tools_gui_tools | length > 0 else '' }}
+
+- name: Install the icons
+  ansible.builtin.copy:
+    src: icons/hicolor/
+    dest: "{{ pixi_ai_tools_icon_dir }}/"
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Refresh the icon theme cache
+
+# Qt needs a display even in a notebook kernel, or napari.Viewer() kills it.
+- name: Install Xvfb for notebook kernels
+  ansible.builtin.apt:
+    name: [xvfb, x11-utils]
+    state: present
+
+- name: Install the kernel display wrapper
+  ansible.builtin.copy:
+    src: ai-tools-kernel
+    dest: "{{ pixi_ai_tools_kernel_wrapper }}"
+    mode: "0755"
+
+- name: Install VirtualGL from the pinned release
+  when: pixi_ai_tools_vglrun | length > 0
+  block:
+    - name: Check which VirtualGL version is installed
+      ansible.builtin.command: dpkg-query -W -f=${Version} virtualgl
+      register: pixi_ai_tools_virtualgl_installed
+      changed_when: false
+      failed_when: false
+
+    # The package version carries a build date the tag does not ("3.1.5-2026...").
+    - name: Download and install VirtualGL
+      when: >-
+        pixi_ai_tools_virtualgl_installed.stdout | split('-') | first
+        != pixi_ai_tools_virtualgl_version
+      block:
+        - name: Download the VirtualGL package
+          ansible.builtin.get_url:
+            url: "{{ pixi_ai_tools_virtualgl_url }}"
+            dest: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+            checksum: "sha256:{{ pixi_ai_tools_virtualgl_sha256 }}"
+            mode: "0644"
+
+        - name: Install VirtualGL
+          ansible.builtin.apt:
+            deb: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+      always:
+        - name: Remove the VirtualGL package file
+          ansible.builtin.file:
+            path: "/tmp/{{ pixi_ai_tools_virtualgl_deb }}"
+            state: absent
+
+# JupyterHub flavour only: an XFCE session over noVNC behind Lab's "Desktop"
+# tile. ssh -X is ~450x slower for napari. The desktop flavour has its own.
+- name: Install the remote desktop
+  when: pixi_ai_tools_desktop | bool and pixi_ai_tools_hub.stat.exists
+  block:
+    - name: Install XFCE and TigerVNC
+      ansible.builtin.apt:
+        name:
+          - dbus-x11
+          - tigervnc-standalone-server
+          - tigervnc-common
+          - xfce4
+          - xfce4-panel
+          - xfce4-session
+          - xfce4-settings
+          - xorg
+          - xubuntu-icon-theme
+        state: present
+
+    - name: Install jupyter-remote-desktop-proxy into the hub's venv
+      ansible.builtin.pip:
+        name: "jupyter-remote-desktop-proxy=={{ pixi_ai_tools_rdp_version }}"
+        virtualenv: /etc/src/venv/jupyter-venv
