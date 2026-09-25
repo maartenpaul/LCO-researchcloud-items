@@ -1,0 +1,102 @@
+---
+- name: Install unzip and ACL tools
+  ansible.builtin.apt:
+    name: [unzip, acl]
+    state: present
+    update_cache: true
+
+- name: Check whether Fiji is installed
+  ansible.builtin.stat:
+    path: "{{ fiji_launcher }}"
+  register: fiji_installed
+
+# Updated in a temporary copy and moved into place afterwards, so a failed run
+# never leaves a half-updated Fiji that the next run would take as installed.
+- name: Download, update and install Fiji
+  when: not fiji_installed.stat.exists
+  block:
+    - name: Create a temporary directory
+      ansible.builtin.tempfile:
+        state: directory
+      register: fiji_tmp
+
+    - name: Download and unpack Fiji
+      ansible.builtin.unarchive:
+        src: "{{ fiji_url }}"
+        dest: "{{ fiji_tmp.path }}"
+        remote_src: true
+
+    - name: Add the update sites
+      ansible.builtin.command:
+        argv: >-
+          {{ [fiji_tmp.path ~ '/Fiji.app/ImageJ-linux64', '--update', 'add-update-sites']
+             + (fiji_update_sites | map(attribute='name') | zip(fiji_update_sites | map(attribute='url'))
+                | flatten) }}
+      changed_when: true
+
+    # The second pass picks up what the first pass's dependencies pulled in.
+    - name: Update Fiji
+      ansible.builtin.command:
+        argv: ["{{ fiji_tmp.path }}/Fiji.app/ImageJ-linux64", --update, update]
+      loop: [1, 2]
+      changed_when: true
+
+    - name: Move Fiji into place
+      ansible.builtin.command:
+        argv: [mv, "{{ fiji_tmp.path }}/Fiji.app", "{{ fiji_dir }}"]
+        creates: "{{ fiji_launcher }}"
+  always:
+    - name: Remove the temporary directory
+      ansible.builtin.file:
+        path: "{{ fiji_tmp.path }}"
+        state: absent
+      when: fiji_tmp.path is defined
+
+# One copy for everyone, writable by everyone, so any user can run the updater
+# or add a plugin. The default ACL makes files one user's updater writes
+# writable for the next, whatever their umask.
+- name: Make Fiji writable by every user
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      chmod -R a+rwX {{ fiji_dir }}
+      find {{ fiji_dir }} -type d -exec setfacl -d -m u::rwX,g::rwX,o::rwX {} +
+    executable: /bin/bash
+  changed_when: false
+
+- name: Add Fiji to the application menu
+  ansible.builtin.copy:
+    dest: /usr/share/applications/fiji.desktop
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Version=1.0
+      Type=Application
+      Name=Fiji
+      GenericName=ImageJ
+      Comment=Scientific image analysis
+      Exec={{ fiji_launcher }} %F
+      TryExec={{ fiji_launcher }}
+      Icon={{ fiji_dir }}/images/icon.png
+      Terminal=false
+      StartupNotify=true
+      Categories=Science;ImageProcessing;
+      StartupWMClass=net-imagej-launcher-ClassLauncher
+
+- name: Install uusrc.general Ansible collection
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | dirname }}/ansible-galaxy
+      collection install -r {{ playbook_dir }}/requirements.yml --force
+  register: fiji_galaxy
+  changed_when: "'Installing' in fiji_galaxy.stdout"
+
+- name: Include uusrc.general.runonce role
+  ansible.builtin.include_role:
+    name: uusrc.general.runonce
+
+- name: Install the per-user Fiji setup
+  ansible.builtin.template:
+    src: setup-fiji.sh.j2
+    dest: /etc/runonce.d/setup-fiji.sh
+    mode: "0755"

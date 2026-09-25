@@ -1,0 +1,76 @@
+---
+- name: Install archive tools
+  ansible.builtin.apt:
+    name: "{{ desktop_extras_packages }}"
+    state: present
+    update_cache: true
+    install_recommends: false
+
+- name: Check for SRC's Guacamole connection
+  ansible.builtin.stat:
+    path: "{{ desktop_extras_guac_conf }}"
+  register: desktop_extras_guac
+
+- name: Enable Guacamole file transfer
+  when: desktop_extras_guac.stat.exists
+  block:
+    - name: Create the drive root
+      ansible.builtin.file:
+        path: "{{ desktop_extras_drive_root }}"
+        state: directory
+        owner: daemon
+        group: daemon
+        mode: "0700"
+
+    - name: Read the Guacamole connection
+      ansible.builtin.slurp:
+        src: "{{ desktop_extras_guac_conf }}"
+      register: desktop_extras_guac_xml
+
+    - name: Inspect the Guacamole connection
+      ansible.builtin.set_fact:
+        desktop_extras_drive_on: "{{ 'name=\"enable-drive\"' in desktop_extras_xml }}"
+        desktop_extras_anchor: "{{ '<param name=\"security\" value=\"rdp\" />' in desktop_extras_xml }}"
+      vars:
+        desktop_extras_xml: "{{ desktop_extras_guac_xml.content | b64decode }}"
+
+    # Anchored on the last fixed param of SRC's connection. If it is gone the
+    # file has changed shape; fail rather than guess.
+    - name: Fail when the Guacamole connection has an unexpected shape
+      ansible.builtin.fail:
+        msg: "{{ desktop_extras_guac_conf }} has no security=rdp param to anchor on."
+      when: not desktop_extras_drive_on and not desktop_extras_anchor
+
+    # ${GUAC_USERNAME} is a Guacamole token, filled in per connection.
+    - name: Add the drive to the Guacamole connection
+      ansible.builtin.replace:
+        path: "{{ desktop_extras_guac_conf }}"
+        regexp: '^(\s*)(<param name="security" value="rdp" />)$'
+        replace: >-
+          \1\2\n\1<param name="enable-drive" value="true" />\n\1<param name="drive-name"
+          value="Transfer" />\n\1<param name="drive-path"
+          value="{{ desktop_extras_drive_root }}/${GUAC_USERNAME}" />\n\1<param
+          name="create-drive-path" value="true" />
+        backup: true
+        validate: python3 -c 'import sys, xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])' %s
+      when: not desktop_extras_drive_on
+      notify: Restart Guacamole
+
+- name: Install uusrc.general Ansible collection
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | dirname }}/ansible-galaxy
+      collection install -r {{ playbook_dir }}/requirements.yml --force
+  register: desktop_extras_galaxy
+  changed_when: "'Installing' in desktop_extras_galaxy.stdout"
+
+- name: Include uusrc.general.runonce role
+  ansible.builtin.include_role:
+    name: uusrc.general.runonce
+
+- name: Install the per-user Transfer links
+  ansible.builtin.copy:
+    src: transfer-links.sh
+    dest: /etc/runonce.d/transfer-links.sh
+    mode: "0755"
+  when: desktop_extras_guac.stat.exists

@@ -1,0 +1,14 @@
+---
+# desktop-extras.yml — SURF Research Cloud component entry point.
+#
+# Small fixes for the SRC Ubuntu desktop (Guacamole) flavour: file transfer
+# through the browser, and archive tools. No parameters. See
+# roles/desktop_extras/README.md.
+
+- name: Desktop extras
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  roles:
+    - desktop_extras

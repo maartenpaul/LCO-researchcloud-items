@@ -2,86 +2,35 @@
 
 Ansible playbooks for [SURF Research Cloud](https://portal.live.surfresearchcloud.nl/) (SRC) catalog components used by the Leiden Cell Observatory.
 
-Each component is one **entry-point playbook** in `playbooks/` — the path registered in the SRC portal, so these paths stay stable — that does nothing but apply one **role** in `playbooks/roles/`. All logic, files, templates and documentation for a component live inside its role.
+Each component has one **entry-point playbook** in `playbooks/`. That path is what the SRC portal registers, so it stays stable. The playbook only applies one **role** in `playbooks/roles/`, and the role holds the logic, files and documentation.
 
 ## Components
 
-| Component | Playbook | Documentation |
-|-----------|----------|---------------|
-| **Pixi AI Tools** — installs [Pixi](https://pixi.sh) and deploys the [AI_tools_pixi](https://github.com/Leiden-Cell-Observatory/AI_tools_pixi) bioimage analysis environments as one shared, root-owned install with system-wide Jupyter kernels | [`playbooks/pixi-ai-tools.yml`](playbooks/pixi-ai-tools.yml) | [roles/pixi_ai_tools](playbooks/roles/pixi_ai_tools/README.md) |
-| **QuPath** — installs [QuPath](https://qupath.github.io/) with preconfigured preferences and extensions | [`playbooks/qupath.yml`](playbooks/qupath.yml) | [roles/qupath](playbooks/roles/qupath/README.md) |
-| **OMERO** — deploys [OMERO.server + OMERO.web](https://github.com/ome/docker-example-omero) with Docker behind the SRC nginx proxy, with optional SRAM authentication or direct HTTPS access and optional bind-mounted data storage | [`playbooks/omero.yml`](playbooks/omero.yml) | [roles/omero](playbooks/roles/omero/README.md) |
-| **conda** — installs [Miniforge](https://github.com/conda-forge/miniforge) system-wide and puts `conda` in every user's shell, without activating base | [`playbooks/conda.yml`](playbooks/conda.yml) | [roles/conda](playbooks/roles/conda/README.md) |
+| Component | Playbook | What it installs |
+|-----------|----------|------------------|
+| **Pixi AI Tools** | [`pixi-ai-tools.yml`](playbooks/pixi-ai-tools.yml) | [AI_tools_pixi](https://github.com/Leiden-Cell-Observatory/AI_tools_pixi) environments (cellpose, stardist, micro_sam, …), built once in `/opt` with a shared cache. Each user gets a copy with kernels and launchers. [README](playbooks/roles/pixi_ai_tools/README.md) |
+| **Fiji** | [`fiji.yml`](playbooks/fiji.yml) | Shared Fiji with the BIOP update sites. [README](playbooks/roles/fiji/README.md) |
+| **QuPath** | [`qupath.yml`](playbooks/qupath.yml) | QuPath with the BIOP common data and extensions. [README](playbooks/roles/qupath/README.md) |
+| **ilastik** | [`ilastik.yml`](playbooks/ilastik.yml) | ilastik (GPU build on GPU workspaces). [README](playbooks/roles/ilastik/README.md) |
+| **Desktop extras** | [`desktop-extras.yml`](playbooks/desktop-extras.yml) | Guacamole file transfer and archive tools for the SRC desktop flavour. [README](playbooks/roles/desktop_extras/README.md) |
+| **OMERO** | [`omero.yml`](playbooks/omero.yml) | [OMERO.server + OMERO.web](https://github.com/ome/docker-example-omero) in Docker behind the SRC nginx proxy. [README](playbooks/roles/omero/README.md) |
+| **conda** | [`conda.yml`](playbooks/conda.yml) | System-wide [Miniforge](https://github.com/conda-forge/miniforge). [README](playbooks/roles/conda/README.md) |
 
-## Repository layout
+Pixi AI Tools is the base for image analysis. Fiji and QuPath point their cellpose integration at its environments when they exist, and still install without them. CellProfiler is planned as an environment in AI_tools_pixi.
 
-```
-playbooks/
-├── pixi-ai-tools.yml            # SRC entry point → role pixi_ai_tools
-├── qupath.yml                   # SRC entry point → role qupath
-├── omero.yml                    # SRC entry point → role omero
-├── conda.yml                    # SRC entry point → role conda
-├── requirements.yml             # Ansible collection deps (uusrc.general)
-└── roles/
-    ├── pixi_ai_tools/
-    │   ├── README.md            # component documentation
-    │   ├── defaults/main.yml    # SRC parameters + paths
-    │   ├── tasks/               # main.yml + one file per phase
-    │   └── files/               # scripts deployed to the workspace
-    ├── qupath/
-    │   ├── README.md
-    │   ├── defaults/main.yml
-    │   ├── tasks/main.yml
-    │   ├── templates/           # .desktop launcher
-    │   └── files/               # groovy script + preferences
-    ├── omero/
-    │   ├── README.md
-    │   ├── defaults/main.yml    # SRC parameters + paths
-    │   ├── handlers/main.yml    # nginx reload
-    │   ├── tasks/               # main.yml + one file per phase
-    │   └── templates/           # compose file + nginx configs
-    └── conda/
-        ├── README.md
-        ├── defaults/main.yml    # SRC parameters + paths
-        ├── tasks/main.yml
-        └── templates/           # condarc + shell hook
-```
+## Adding a component
 
-Roles live under `playbooks/roles/` because Ansible resolves that directory relative to the playbook itself — no `ansible.cfg` or `roles_path` needed, whatever working directory SRC runs from.
-
-## Adding a new component
-
-1. Create `playbooks/roles/<name>/` with `tasks/main.yml`, plus `defaults/main.yml`, `files/`, `templates/` as needed. Read SRC portal parameters in `defaults/main.yml`:
+1. Create `playbooks/roles/<name>/tasks/main.yml`, adding `defaults/`, `files/` and `templates/` as needed. Keep it to one tasks file unless it really outgrows that.
+2. Read SRC parameters in `defaults/main.yml`. SRC passes them as Ansible variables, so read the variable first; the environment is only a fallback for testing:
 
    ```yaml
-   my_param: "{{ lookup('env', 'MY_PARAM') | default('somedefault', true) }}"
+   my_param: "{{ MY_PARAM | default(lookup('env', 'MY_PARAM'), true) | default('somedefault', true) }}"
    ```
 
-2. Create the entry point `playbooks/<name>.yml`, which only applies the role:
+3. Add `playbooks/<name>.yml`, which only applies the role, and a `README.md` in the role.
+4. Add a row to the table above and the playbook to `validate_playbooks.sh`.
 
-   ```yaml
-   ---
-   - name: Install <name>
-     hosts: localhost
-     connection: local
-     gather_facts: false
-     roles:
-       - <name>
-   ```
-
-3. Write `playbooks/roles/<name>/README.md`: what it does, SRC parameters, prerequisites, troubleshooting.
-4. Add a row to the Components table above.
-5. Add the playbook filename to the `PLAYBOOKS` array in `validate_playbooks.sh`, then run it.
-
-Keep task files small — one file per phase, imported from `tasks/main.yml` — as `pixi_ai_tools` does.
-
-## Dependencies
-
-`pixi-ai-tools.yml` uses the [uusrc.general](https://github.com/UtrechtUniversity/researchcloud-items) collection for the `runonce` role:
-
-```bash
-ansible-galaxy collection install -r playbooks/requirements.yml
-```
+Per-user setup (Desktop icons, prefs) goes in a script in `/etc/runonce.d`, via the `uusrc.general.runonce` role from [researchcloud-items](https://github.com/UtrechtUniversity/researchcloud-items) (`playbooks/requirements.yml`).
 
 ## Validation
 
@@ -89,4 +38,4 @@ ansible-galaxy collection install -r playbooks/requirements.yml
 ./validate_playbooks.sh
 ```
 
-Runs `yamllint`, `ansible-playbook --syntax-check`, and `ansible-lint` over each playbook.
+Runs `yamllint`, `ansible-playbook --syntax-check` and `ansible-lint` on every playbook. Passing lint proves little here; see `CLAUDE.md` for testing on a workspace.

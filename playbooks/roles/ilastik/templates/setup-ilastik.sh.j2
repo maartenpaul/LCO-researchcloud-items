@@ -1,0 +1,15 @@
+#!/bin/bash
+# setup-ilastik.sh — per-user part of the ilastik role (Desktop icon), run once at first login.
+# Written by Ansible; safe to re-run by hand.
+
+# XFCE asks "untrusted launcher?" unless the checksum is stored as GIO metadata.
+if [ -d /etc/xdg/xfce4 ]; then
+    mkdir -p "${HOME}/Desktop"
+    cp /usr/share/applications/ilastik.desktop "${HOME}/Desktop/"
+    chmod +x "${HOME}/Desktop/ilastik.desktop"
+    if command -v gio >/dev/null 2>&1; then
+        gio set -t string "${HOME}/Desktop/ilastik.desktop" metadata::xfce-exe-checksum \
+            "$(sha256sum "${HOME}/Desktop/ilastik.desktop" | cut -d' ' -f1)" 2>/dev/null || true
+        gio set -t string "${HOME}/Desktop/ilastik.desktop" metadata::trusted true 2>/dev/null || true
+    fi
+fi

@@ -1,0 +1,15 @@
+#!/bin/bash
+# setup-fiji.sh — per-user part of the fiji role, run once at first login.
+# Written by Ansible; safe to re-run by hand.
+
+# XFCE asks "untrusted launcher?" unless the checksum is stored as GIO metadata.
+if [ -d /etc/xdg/xfce4 ]; then
+    mkdir -p "${HOME}/Desktop"
+    cp /usr/share/applications/fiji.desktop "${HOME}/Desktop/"
+    chmod +x "${HOME}/Desktop/fiji.desktop"
+    if command -v gio >/dev/null 2>&1; then
+        gio set -t string "${HOME}/Desktop/fiji.desktop" metadata::xfce-exe-checksum \
+            "$(sha256sum "${HOME}/Desktop/fiji.desktop" | cut -d' ' -f1)" 2>/dev/null || true
+        gio set -t string "${HOME}/Desktop/fiji.desktop" metadata::trusted true 2>/dev/null || true
+    fi
+fi

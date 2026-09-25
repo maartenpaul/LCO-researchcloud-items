@@ -1,0 +1,6 @@
+---
+# Drops open browser tabs; the xrdp session survives a page reload.
+- name: Restart Guacamole
+  ansible.builtin.systemd:
+    name: tomcat10
+    state: restarted

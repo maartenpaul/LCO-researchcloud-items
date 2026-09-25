@@ -1,0 +1,13 @@
+---
+# fiji.yml — SURF Research Cloud component entry point.
+#
+# One shared Fiji in /opt/Fiji.app, with the BIOP update sites. See
+# roles/fiji/README.md. No parameters.
+
+- name: Install Fiji
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  roles:
+    - fiji
