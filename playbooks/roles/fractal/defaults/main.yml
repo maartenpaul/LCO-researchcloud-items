@@ -43,16 +43,16 @@ fractal_demo_data: >-
 # Component releases, verified working together.
 fractal_server_version: >-
   {{ FRACTAL_SERVER_VERSION | default(lookup('env', 'FRACTAL_SERVER_VERSION'), true)
-     | default('2.24.2', true) }}
+     | default('2.25.3', true) }}
 fractal_web_version: >-
   {{ FRACTAL_WEB_VERSION | default(lookup('env', 'FRACTAL_WEB_VERSION'), true)
-     | default('1.29.6', true) }}
+     | default('1.29.9', true) }}
 fractal_client_version: >-
   {{ FRACTAL_CLIENT_VERSION | default(lookup('env', 'FRACTAL_CLIENT_VERSION'), true)
-     | default('2.23.1', true) }}
+     | default('2.24.0', true) }}
 fractal_feature_explorer_version: >-
   {{ FRACTAL_FEATURE_EXPLORER_VERSION | default(lookup('env', 'FRACTAL_FEATURE_EXPLORER_VERSION'), true)
-     | default('0.1.18', true) }}
+     | default('0.1.20', true) }}
 
 # Upstream commit to deploy. NOT an SRC parameter: the templated run_server.sh
 # and bootstrap.sh, and the NODE_MAJOR_VERSION patch, all target this specific

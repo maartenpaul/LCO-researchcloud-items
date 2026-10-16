@@ -29,11 +29,11 @@
 #                              Zenodo example datasets on first boot
 #                              (default: "true")
 #   FRACTAL_CONTAINERS_REF   — commit of fractal-containers to deploy
-#   FRACTAL_SERVER_VERSION   — fractal-server release (default: "2.24.2")
-#   FRACTAL_WEB_VERSION      — fractal-web release (default: "1.29.6")
-#   FRACTAL_CLIENT_VERSION   — fractal-client release (default: "2.23.1")
+#   FRACTAL_SERVER_VERSION   — fractal-server release (default: "2.25.3")
+#   FRACTAL_WEB_VERSION      — fractal-web release (default: "1.29.9")
+#   FRACTAL_CLIENT_VERSION   — fractal-client release (default: "2.24.0")
 #   FRACTAL_FEATURE_EXPLORER_VERSION — feature-explorer release
-#                              (default: "0.1.18")
+#                              (default: "0.1.20")
 
 - name: Deploy Fractal
   hosts: localhost

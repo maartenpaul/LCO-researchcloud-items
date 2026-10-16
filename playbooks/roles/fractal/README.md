@@ -50,10 +50,10 @@ Attach storage to the workspace and point `FRACTAL_DATA_PATH` at it.
 | `FRACTAL_ADMIN_PASSWORD` | generated | admin password; see Credentials |
 | `FRACTAL_REQUIRE_SRAM_AUTH` | `true` | SRAM gate in front of `/` and `/files` |
 | `FRACTAL_DEMO_DATA` | `true` | collect task packages and download the Zenodo demo datasets on first boot |
-| `FRACTAL_SERVER_VERSION` | `2.24.2` | |
-| `FRACTAL_WEB_VERSION` | `1.29.6` | |
-| `FRACTAL_CLIENT_VERSION` | `2.23.1` | |
-| `FRACTAL_FEATURE_EXPLORER_VERSION` | `0.1.18` | |
+| `FRACTAL_SERVER_VERSION` | `2.25.3` | |
+| `FRACTAL_WEB_VERSION` | `1.29.9` | |
+| `FRACTAL_CLIENT_VERSION` | `2.24.0` | |
+| `FRACTAL_FEATURE_EXPLORER_VERSION` | `0.1.20` | |
 
 Two things are deliberately **not** parameters:
 
