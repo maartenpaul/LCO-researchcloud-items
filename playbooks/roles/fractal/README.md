@@ -19,6 +19,13 @@ Everything is served from one HTTPS origin:
 | `https://<workspace>/data`, `/data/vizarr` | fractal-data and the vizarr viewer |
 | `https://<workspace>/explorer` | fractal-feature-explorer |
 | `https://<workspace>/files` | filebrowser |
+| `https://<workspace>/fractal-info/` | static page listing these URLs, the internal ports and the deployed versions |
+
+The services' own ports (fractal-server 8000, PostgreSQL 5433, SLURM, …) listen on
+the workspace but are closed by the SRC firewall. That firewall is configured in the
+SRC dashboard, not on the workspace, so nothing this role does opens a port. Use an
+SSH tunnel rather than opening one: PostgreSQL, SLURM and the filebrowser port have
+no authentication of their own.
 
 **One origin is a requirement, not a stylistic choice.** fractal-web's
 `PUBLIC_FRACTAL_*` URLs are compiled into the client bundle and fetched by the

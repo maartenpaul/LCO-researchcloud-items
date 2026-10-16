@@ -16,6 +16,22 @@
     mode: "0644"
   notify: Reload nginx
 
+- name: Create the info page directory
+  ansible.builtin.file:
+    path: "{{ fractal_info_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the info page
+  ansible.builtin.template:
+    src: fractal-info.html.j2
+    dest: "{{ fractal_info_dir }}/index.html"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Deploy the Fractal location blocks on the SRC HTTPS server
   ansible.builtin.template:
     src: fractal-location.conf.j2

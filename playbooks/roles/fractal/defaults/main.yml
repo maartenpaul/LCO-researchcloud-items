@@ -134,6 +134,17 @@ fractal_web_port: 5173
 fractal_data_port: 3000
 fractal_explorer_port: 8501
 fractal_filebrowser_port: 8080
+# Not proxied; only listed on the info page. Upstream's compose file moves
+# PostgreSQL to 5433, and its SLURM container uses slurmd 6001, slurmctld 6817
+# and slurmdbd 6819.
+fractal_postgres_port: 5433
+fractal_slurm_ports: [6001, 6817, 6819]
+
+# A static page listing where each Fractal application is served, at
+# https://<workspace><fractal_info_path>/. It lives outside /opt/fractal, which
+# is root-only, because nginx workers run as www-data.
+fractal_info_path: /fractal-info
+fractal_info_dir: /var/www/fractal-info
 
 # SRC provides workspace_fqdn as an extra var at component runtime; fall back
 # to the env var, then to the host FQDN (which is correct on SRC workspaces).

@@ -1,0 +1,104 @@
+<!doctype html>
+<!-- Managed by the fractal SRC component; re-running it overwrites this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fractal on this workspace</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #59636e;
+    --line: #d1d9e0; --head: #f6f8fa; --link: #0969da; --code: #eff2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1;
+      --line: #3d444d; --head: #151b23; --link: #4493f8; --code: #262c36;
+    }
+  }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0 auto; max-width: 960px; padding: 24px 16px 48px;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.2rem; margin: 32px 0 8px; }
+  p { margin: 8px 0; }
+  .muted { color: var(--muted); }
+  a { color: var(--link); }
+  code, pre { background: var(--code); border-radius: 4px; font-size: 0.9em; }
+  code { padding: 1px 4px; }
+  pre { padding: 12px; overflow-x: auto; }
+  .table { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--head); }
+  td:nth-child(2), td:nth-child(3) { white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<h1>Fractal on this workspace</h1>
+<p class="muted">{{ fractal_workspace_fqdn }}</p>
+
+<h2>In the browser</h2>
+<p>Everything is served over HTTPS from this one address. Use these links;
+the ports in the next table are not reachable from outside the workspace.</p>
+<div class="table">
+<table>
+  <tr><th>Application</th><th>URL</th><th>Internal port</th><th>What it is</th></tr>
+  <tr><td>fractal-web</td><td><a href="/">/</a></td><td>{{ fractal_web_port }}</td>
+      <td>The Fractal web client: projects, datasets, workflows, jobs.</td></tr>
+  <tr><td>fractal-data / vizarr</td><td><a href="/data/vizarr">/data</a></td><td>{{ fractal_data_port }}</td>
+      <td>Serves the OME-Zarr data and the vizarr viewer. Uses your fractal-web login, so
+      log in there first.</td></tr>
+  <tr><td>fractal-feature-explorer</td><td><a href="/explorer">/explorer</a></td><td>{{ fractal_explorer_port }}</td>
+      <td>Browse and plot measurement tables.</td></tr>
+  <tr><td>filebrowser</td><td><a href="/files">/files</a></td><td>{{ fractal_filebrowser_port }}</td>
+      <td>Browse, upload and download files in the Fractal data folder.</td></tr>
+  <tr><td>This page</td><td><a href="{{ fractal_info_path }}/">{{ fractal_info_path }}/</a></td><td>&ndash;</td>
+      <td>Served by nginx itself.</td></tr>
+</table>
+</div>
+
+<h2>On the workspace only</h2>
+<p>These services listen on the workspace but the firewall keeps them closed to
+the outside. Reach them from a terminal on the workspace, or from your laptop
+through an SSH tunnel.</p>
+<p>The firewall is managed by SURF Research Cloud, not on the workspace: opening
+a port to the internet is done in the SRC dashboard, and changing anything on the
+workspace itself has no effect. Prefer the tunnel. PostgreSQL, SLURM and the
+filebrowser port have no login of their own, so opening them would expose them
+to anyone.</p>
+<div class="table">
+<table>
+  <tr><th>Service</th><th>Port</th><th>What it is</th></tr>
+  <tr><td>fractal-server</td><td>{{ fractal_server_port }}</td>
+      <td>The REST API behind fractal-web. Interactive API docs at <code>/docs</code>.</td></tr>
+  <tr><td>PostgreSQL</td><td>{{ fractal_postgres_port }}</td>
+      <td>fractal-server's database.</td></tr>
+  <tr><td>SLURM</td><td>{{ fractal_slurm_ports | join(', ') }}</td>
+      <td>The small SLURM cluster, inside a container, that runs Fractal jobs on this workspace.</td></tr>
+</table>
+</div>
+
+<p>For example, to open the fractal-server API docs on your laptop at
+<code>http://localhost:{{ fractal_server_port }}/docs</code>:</p>
+<pre>ssh -L {{ fractal_server_port }}:localhost:{{ fractal_server_port }} &lt;username&gt;@{{ fractal_workspace_fqdn }}</pre>
+
+<h2>Versions</h2>
+<div class="table">
+<table>
+  <tr><th>Component</th><th>Version</th></tr>
+  <tr><td>fractal-server</td><td>{{ fractal_server_version }}</td></tr>
+  <tr><td>fractal-web</td><td>{{ fractal_web_version }}</td></tr>
+  <tr><td>fractal-client</td><td>{{ fractal_client_version }}</td></tr>
+  <tr><td>fractal-feature-explorer</td><td>{{ fractal_feature_explorer_version }}</td></tr>
+</table>
+</div>
+
+<p class="muted">Documentation:
+<a href="https://fractal-analytics-platform.github.io/">fractal-analytics-platform.github.io</a></p>
+
+</body>
+</html>
